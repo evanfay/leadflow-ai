@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Add Lead — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Add Lead</h1>
+    <p class="page-subtitle">Manually add a lead to your pool</p>
+  </div>
+  <a href="{{ url_for('leads.pool') }}" class="btn btn-ghost">
+    <i data-lucide="arrow-left"></i> Back
+  </a>
+</div>
+
+<div class="form-page-layout">
+  <form method="POST" action="{{ url_for('leads.new_lead') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+    <div class="card form-section">
+      <div class="card-header"><h2 class="card-title">Contact Info</h2></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">First Name</label>
+            <input type="text" name="first_name" class="form-control" placeholder="Jane">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Last Name</label>
+            <input type="text" name="last_name" class="form-control" placeholder="Smith">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email <span class="required">*</span></label>
+          <input type="email" name="email" class="form-control" placeholder="jane@company.com" required>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Company</label>
+            <input type="text" name="company" class="form-control" placeholder="Acme Corp">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Job Title</label>
+            <input type="text" name="title" class="form-control" placeholder="Operations Manager">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Website</label>
+            <input type="url" name="website" class="form-control" placeholder="https://acme.com">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="tel" name="phone" class="form-control" placeholder="(555) 123-4567">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">LinkedIn URL</label>
+          <input type="url" name="linkedin_url" class="form-control" placeholder="https://linkedin.com/in/janesmith">
+        </div>
+      </div>
+    </div>
+
+    <div class="card form-section">
+      <div class="card-header"><h2 class="card-title">Signals & Context</h2></div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Signal 1</label>
+          <input type="text" name="signal_1" class="form-control"
+                 placeholder="e.g. Just opened second location in Marlton NJ">
+          <div class="form-hint">A specific observation, trigger, or context point about this lead.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Signal 2</label>
+          <input type="text" name="signal_2" class="form-control"
+                 placeholder="e.g. 4.2 stars, 180 reviews — high volume operation">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Signal 3</label>
+          <input type="text" name="signal_3" class="form-control"
+                 placeholder="e.g. Website has online booking but no follow-up automation">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Account Grade</label>
+          <select name="account_grade" class="form-control" style="max-width:200px;">
+            <option value="A">A — High priority</option>
+            <option value="B" selected>B — Standard</option>
+            <option value="C">C — Lower priority</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="3"
+                    placeholder="Any internal notes about this lead…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:1rem; justify-content:flex-end;">
+      <a href="{{ url_for('leads.pool') }}" class="btn btn-ghost">Cancel</a>
+      <button type="submit" class="btn btn-primary btn-lg">
+        <i data-lucide="user-plus"></i> Add Lead
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

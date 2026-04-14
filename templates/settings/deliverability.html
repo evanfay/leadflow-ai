@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Deliverability Health — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Deliverability Health</h1>
+    <p class="page-subtitle">Monitor your sending accounts and catch spam risks before they hurt you</p>
+  </div>
+  <a href="{{ url_for('settings.email_accounts') }}" class="btn btn-ghost">
+    <i data-lucide="mail"></i> Email Accounts
+  </a>
+</div>
+
+{% if not accounts %}
+<div class="empty-state">
+  <i data-lucide="mail-x" style="width:48px;height:48px;color:var(--text-muted);margin-bottom:1rem;"></i>
+  <h3>No email accounts connected</h3>
+  <p>Connect a Gmail account in Settings → Email Accounts to see health metrics.</p>
+  <a href="{{ url_for('settings.email_accounts') }}" class="btn btn-primary">Connect Account</a>
+</div>
+{% else %}
+
+<!-- Account Health Cards -->
+<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap:1.5rem; margin-bottom:2rem;">
+  {% for h in health %}
+  <div class="card {% if h.status == 'danger' %}border-danger{% elif h.status == 'warning' %}border-warning{% else %}border-ok{% endif %}">
+    <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <i data-lucide="mail" style="color:var(--accent-1);"></i>
+        <div>
+          <div style="font-weight:600; font-size:0.95rem;">{{ h.email }}</div>
+          <div style="font-size:0.8rem; color:var(--text-muted);">
+            {% if h.warmup_enabled %}Warmup Week {{ h.warmup_week }}{% else %}Standard sending{% endif %}
+          </div>
+        </div>
+      </div>
+      <span class="badge {% if h.status == 'ok' %}badge-green{% elif h.status == 'warning' %}badge-yellow{% else %}badge-red{% endif %}">
+        {% if h.status == 'ok' %}Healthy{% elif h.status == 'warning' %}Watch{% else %}At Risk{% endif %}
+      </span>
+    </div>
+    <div class="card-body">
+      <!-- Daily send progress -->
+      <div style="margin-bottom:1.25rem;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:0.4rem;">
+          <span style="font-size:0.85rem; color:var(--text-muted);">Daily sends</span>
+          {% if h.unlimited %}
+            <span style="font-size:0.85rem; font-weight:600;">{{ h.sent_today }} sent &middot; <em>no cap</em></span>
+          {% else %}
+            <span style="font-size:0.85rem; font-weight:600;">{{ h.sent_today }} / {{ h.daily_cap }}</span>
+          {% endif %}
+        </div>
+        {% if not h.unlimited %}
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill {% if h.cap_pct >= 90 %}fill-danger{% elif h.cap_pct >= 70 %}fill-warning{% else %}fill-ok{% endif %}"
+               style="width: {{ [h.cap_pct, 100]|min }}%"></div>
+        </div>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">
+          {{ h.cap_pct }}% of today's limit used
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Warmup info -->
+      {% if h.warmup_enabled %}
+      <div class="info-row">
+        <span><i data-lucide="flame" style="width:14px;height:14px;color:#F97316;"></i> {{ h.warmup_tier_label }}</span>
+        <span>
+          {% if h.warmup_complete %}
+            Complete ✓
+          {% else %}
+            Week {{ h.warmup_week }}/{{ h.warmup_max_week }}{% if h.warmup_cap %} — {{ h.warmup_cap }}/day{% endif %}
+          {% endif %}
+        </span>
+      </div>
+      {% if not h.warmup_complete %}
+      <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:1rem;">
+        Advances automatically every Monday.
+      </div>
+      {% endif %}
+      {% endif %}
+
+      <!-- Warnings -->
+      {% if h.warnings %}
+      <div class="alert alert-warning" style="font-size:0.85rem;">
+        <i data-lucide="alert-triangle" style="width:16px;height:16px;flex-shrink:0;"></i>
+        <div>
+          {% for w in h.warnings %}
+          <div>{{ w }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Template Spam Scan -->
+<div class="card" style="margin-bottom:2rem;">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i data-lucide="shield-alert" style="color:var(--accent-1);"></i> Template Spam Scan
+    </h2>
+    <span style="font-size:0.85rem; color:var(--text-muted);">Flags words that trigger spam filters</span>
+  </div>
+  <div class="card-body">
+    {% if template_scores %}
+    <table class="leads-table">
+      <thead>
+        <tr>
+          <th>Template</th>
+          <th>Type</th>
+          <th>Spam Score</th>
+          <th>Flagged Words</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ts in template_scores %}
+        <tr>
+          <td><strong>{{ ts.name }}</strong></td>
+          <td><span class="badge badge-gray">{{ ts.touch_type }}</span></td>
+          <td>
+            {% if ts.score == 0 %}
+              <span class="badge badge-green">Clean</span>
+            {% elif ts.score < 30 %}
+              <span class="badge badge-yellow">Low Risk ({{ ts.score }})</span>
+            {% elif ts.score < 60 %}
+              <span class="badge badge-orange">Medium Risk ({{ ts.score }})</span>
+            {% else %}
+              <span class="badge badge-red">High Risk ({{ ts.score }})</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if ts.flagged %}
+              {% for word in ts.flagged %}
+                <code style="background:var(--bg-alt); padding:0.15rem 0.4rem; border-radius:4px; font-size:0.8rem; margin-right:0.3rem;">{{ word }}</code>
+              {% endfor %}
+            {% else %}
+              <span style="color:var(--text-muted); font-size:0.85rem;">None detected</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-muted);">No templates found. Create templates in Settings → Templates.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Best Practices -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i data-lucide="book-open" style="color:var(--accent-1);"></i> Deliverability Best Practices
+    </h2>
+  </div>
+  <div class="card-body">
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:1.5rem;">
+      <div class="tip-block">
+        <div class="tip-icon"><i data-lucide="flame"></i></div>
+        <h4>Warm up new accounts</h4>
+        <p>Start at 10 emails/day and ramp up over 4 weeks. Enable "Warmup Mode" on any new account in Email Accounts settings.</p>
+      </div>
+      <div class="tip-block">
+        <div class="tip-icon"><i data-lucide="clock"></i></div>
+        <h4>Send in business hours</h4>
+        <p>LeadFlow automatically restricts sends to 8–11am and 1–4pm on weekdays. Never send at off-hours to business inboxes.</p>
+      </div>
+      <div class="tip-block">
+        <div class="tip-icon"><i data-lucide="text"></i></div>
+        <h4>Keep emails short</h4>
+        <p>Under 100 words, no images, no attachments in cold email. Plain text reads as human. Spam filters flag HTML-heavy emails.</p>
+      </div>
+      <div class="tip-block">
+        <div class="tip-icon"><i data-lucide="user-check"></i></div>
+        <h4>Honor unsubscribes immediately</h4>
+        <p>LeadFlow auto-adds any unsubscribe reply to your Do Not Contact list and stops all future sends to that address.</p>
+      </div>
+      <div class="tip-block">
+        <div class="tip-icon"><i data-lucide="at-sign"></i></div>
+        <h4>Set up SPF, DKIM, DMARC</h4>
+        <p>Configure these DNS records for your domain. Gmail/Google Workspace walks you through it. Without them, you'll land in spam.</p>
+      </div>
+      <div class="tip-block">
+        <div class="tip-icon"><i data-lucide="refresh-cw"></i></div>
+        <h4>Rotate sending accounts</h4>
+        <p>If you're sending at volume, connect 2–3 accounts. LeadFlow automatically rotates them round-robin so no single account gets flagged.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<style>
+.border-ok    { border-left: 3px solid #788c5d; }
+.border-warning { border-left: 3px solid #F59E0B; }
+.border-danger  { border-left: 3px solid #ef4444; }
+.progress-bar-track { background: var(--bg-alt); border-radius: 99px; height: 8px; overflow: hidden; }
+.progress-bar-fill  { height: 100%; border-radius: 99px; transition: width 0.4s; }
+.fill-ok      { background: var(--accent-gradient); }
+.fill-warning { background: #F59E0B; }
+.fill-danger  { background: #ef4444; }
+.info-row     { display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:0.4rem; }
+.alert        { display:flex; gap:0.6rem; align-items:flex-start; padding:0.75rem 1rem; border-radius:var(--radius); background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); color:#92400e; margin-top:0.5rem; }
+.tip-block    { padding:1rem; background:var(--bg-alt); border-radius:var(--radius); }
+.tip-block h4 { font-size:0.95rem; font-weight:600; margin:0.5rem 0 0.4rem; }
+.tip-block p  { font-size:0.85rem; color:var(--text-muted); margin:0; line-height:1.5; }
+.tip-icon     { width:36px; height:36px; background:rgba(249,115,22,0.1); border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--accent-1); }
+.tip-icon i   { width:18px; height:18px; }
+.badge-yellow { background:rgba(245,158,11,0.12); color:#92400e; }
+.badge-orange { background:rgba(249,115,22,0.12); color:#9a3412; }
+.badge-red    { background:rgba(239,68,68,0.12); color:#991b1b; }
+</style>
+{% endblock %}

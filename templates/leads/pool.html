@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Lead Pool — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Lead Pool</h1>
+    <p class="page-subtitle">{{ leads|length }} lead{% if leads|length != 1 %}s{% endif %}{% if q %} matching "{{ q }}"{% endif %}</p>
+  </div>
+  <div style="display:flex; gap:0.75rem;">
+    <a href="{{ url_for('leads.upload') }}" class="btn btn-ghost">
+      <i data-lucide="upload"></i> Upload
+    </a>
+    <a href="{{ url_for('leads.new_lead') }}" class="btn btn-primary">
+      <i data-lucide="plus"></i> Add Lead
+    </a>
+  </div>
+</div>
+
+<!-- Filters + Search -->
+<div class="filter-bar">
+  <form method="GET" action="{{ url_for('leads.pool') }}" style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; flex:1;">
+    <div class="search-input-wrap">
+      <i data-lucide="search" class="search-icon"></i>
+      <input type="text" name="q" value="{{ q }}" class="form-control search-input" placeholder="Search name, email, company…">
+    </div>
+    <button type="submit" class="btn btn-ghost">Search</button>
+    {% if q %}
+    <a href="{{ url_for('leads.pool') }}" class="btn btn-ghost">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Bulk Actions -->
+<form method="POST" action="{{ url_for('leads.bulk_enroll') }}" id="bulk-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+  <div class="bulk-action-bar" id="bulk-bar" style="display:none;">
+    <span id="bulk-count" style="color:var(--text-body); font-size:0.875rem;">0 selected</span>
+    <select name="campaign_id" class="form-control" style="max-width:250px;" required>
+      <option value="">— Select campaign —</option>
+      {% for c in campaigns %}
+      <option value="{{ c.id }}">{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i data-lucide="send"></i> Enroll in Campaign
+    </button>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="clearSelection()">Clear</button>
+  </div>
+
+  <!-- Leads Table -->
+  <div class="card">
+    <div class="card-body" style="padding:0;">
+      {% if leads %}
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th style="width:40px;">
+              <input type="checkbox" id="select-all" onchange="toggleAll(this)"
+                     style="width:16px;height:16px;accent-color:var(--accent-1);">
+            </th>
+            <th>Name</th>
+            <th>Company</th>
+            <th>Email</th>
+            <th>Grade</th>
+            <th>Campaigns</th>
+            <th>Added</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lead in leads %}
+          <tr>
+            <td>
+              <input type="checkbox" name="lead_ids" value="{{ lead.id }}"
+                     class="lead-checkbox" onchange="updateBulkBar()"
+                     style="width:16px;height:16px;accent-color:var(--accent-1);">
+            </td>
+            <td>
+              <a href="{{ url_for('leads.detail', lead_id=lead.id) }}" class="table-link">
+                {{ lead.first_name }} {{ lead.last_name }}
+              </a>
+              {% if lead.do_not_contact %}
+              <span class="badge badge-red" style="font-size:0.6rem; margin-left:0.25rem;">DNC</span>
+              {% endif %}
+            </td>
+            <td style="color:var(--text-body);">{{ lead.company or '—' }}</td>
+            <td style="color:var(--text-muted); font-size:0.85rem;">{{ lead.email }}</td>
+            <td>
+              <span class="badge
+                {% if lead.account_grade == 'A' %}badge-orange
+                {% elif lead.account_grade == 'B' %}badge-blue
+                {% else %}badge-gray{% endif %}">
+                {{ lead.account_grade or '?' }}
+              </span>
+            </td>
+            <td style="color:var(--text-muted); font-size:0.85rem;">
+              {{ lead.enrolled_leads.count() }} campaign{% if lead.enrolled_leads.count() != 1 %}s{% endif %}
+            </td>
+            <td style="color:var(--text-muted); font-size:0.85rem;">
+              {{ lead.created_at.strftime('%b %d') if lead.created_at else '—' }}
+            </td>
+            <td>
+              <a href="{{ url_for('leads.detail', lead_id=lead.id) }}" class="btn btn-xs btn-ghost">
+                <i data-lucide="eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <i data-lucide="users" style="width:48px;height:48px;color:var(--text-muted);"></i>
+        <h3>No leads yet</h3>
+        <p>Upload a CSV or add leads manually to get started.</p>
+        <div style="display:flex;gap:0.75rem;justify-content:center;">
+          <a href="{{ url_for('leads.upload') }}" class="btn btn-ghost">
+            <i data-lucide="upload"></i> Upload CSV
+          </a>
+          <a href="{{ url_for('leads.new_lead') }}" class="btn btn-primary">
+            <i data-lucide="plus"></i> Add Lead
+          </a>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleAll(cb) {
+  document.querySelectorAll('.lead-checkbox').forEach(c => c.checked = cb.checked);
+  updateBulkBar();
+}
+function updateBulkBar() {
+  const checked = document.querySelectorAll('.lead-checkbox:checked');
+  const bar = document.getElementById('bulk-bar');
+  const count = document.getElementById('bulk-count');
+  bar.style.display = checked.length > 0 ? 'flex' : 'none';
+  count.textContent = checked.length + ' selected';
+  document.getElementById('select-all').indeterminate =
+    checked.length > 0 && checked.length < document.querySelectorAll('.lead-checkbox').length;
+}
+function clearSelection() {
+  document.querySelectorAll('.lead-checkbox, #select-all').forEach(c => c.checked = false);
+  updateBulkBar();
+}
+</script>
+{% endblock %}

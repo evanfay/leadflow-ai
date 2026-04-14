@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Campaigns — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Campaigns</h1>
+    <p class="page-subtitle">{{ campaigns|length }} campaign{% if campaigns|length != 1 %}s{% endif %} total</p>
+  </div>
+  <a href="{{ url_for('campaigns.create_campaign') }}" class="btn btn-primary">
+    <i data-lucide="plus"></i> New Campaign
+  </a>
+</div>
+
+{% if campaigns %}
+<div class="card-grid">
+  {% for c in campaigns %}
+  <div class="campaign-card">
+    <div class="campaign-card-header">
+      <div>
+        <h3 class="campaign-name">
+          <a href="{{ url_for('campaigns.detail', campaign_id=c.id) }}">{{ c.name }}</a>
+        </h3>
+        <div class="campaign-meta">
+          <i data-lucide="git-branch" style="width:13px;height:13px;"></i>
+          {{ c.sequence.name if c.sequence else 'No sequence assigned' }}
+        </div>
+      </div>
+      <span class="badge
+        {% if c.status == 'active' %}badge-green
+        {% elif c.status == 'paused' %}badge-amber
+        {% elif c.status == 'complete' %}badge-blue
+        {% else %}badge-gray{% endif %}">
+        {{ c.status.title() }}
+      </span>
+    </div>
+
+    <div class="campaign-stats">
+      <div class="cstat">
+        <div class="cstat-value">{{ c.active_lead_count }}</div>
+        <div class="cstat-label">Active leads</div>
+      </div>
+      <div class="cstat">
+        <div class="cstat-value">{{ c.total_lead_count }}</div>
+        <div class="cstat-label">Total enrolled</div>
+      </div>
+      <div class="cstat">
+        <div class="cstat-value">{{ c.content_mode.title() }}</div>
+        <div class="cstat-label">Content mode</div>
+      </div>
+    </div>
+
+    <div class="campaign-card-footer">
+      <div style="display:flex; gap:0.5rem;">
+        <a href="{{ url_for('campaigns.detail', campaign_id=c.id) }}" class="btn btn-sm btn-ghost">
+          <i data-lucide="eye"></i> View
+        </a>
+        {% if c.status == 'active' %}
+        <form method="POST" action="{{ url_for('campaigns.pause_campaign', campaign_id=c.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <button type="submit" class="btn btn-sm btn-ghost">
+            <i data-lucide="pause"></i> Pause
+          </button>
+        </form>
+        {% elif c.status == 'paused' %}
+        <form method="POST" action="{{ url_for('campaigns.resume_campaign', campaign_id=c.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <button type="submit" class="btn btn-sm btn-ghost">
+            <i data-lucide="play"></i> Resume
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      <span style="font-size:0.78rem; color:var(--text-muted);">
+        Created {{ c.created_at.strftime('%b %d, %Y') if c.created_at else '—' }}
+      </span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-page-state">
+  <div class="empty-icon">
+    <i data-lucide="send"></i>
+  </div>
+  <h2>No campaigns yet</h2>
+  <p>Create your first campaign to start sending personalized sequences to your leads.</p>
+  <a href="{{ url_for('campaigns.create_campaign') }}" class="btn btn-primary btn-lg">
+    <i data-lucide="plus"></i> Create Campaign
+  </a>
+</div>
+{% endif %}
+{% endblock %}

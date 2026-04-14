@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}{% if seq %}Edit{% else %}Build{% endif %} Sequence — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{% if seq %}Edit Sequence{% else %}Build Sequence{% endif %}</h1>
+    <p class="page-subtitle">Define the touches, channels, and timing</p>
+  </div>
+  <a href="{{ url_for('sequences.list_sequences') }}" class="btn btn-ghost">
+    <i data-lucide="arrow-left"></i> Back
+  </a>
+</div>
+
+<form method="POST" action="{% if seq %}{{ url_for('sequences.edit_sequence', seq_id=seq.id) }}{% else %}{{ url_for('sequences.create_sequence') }}{% endif %}" id="seq-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+  <div class="card form-section">
+    <div class="card-header"><h2 class="card-title">Sequence Info</h2></div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group" style="flex:2;">
+          <label class="form-label">Sequence Name <span class="required">*</span></label>
+          <input type="text" name="name" class="form-control"
+                 value="{{ seq.name if seq else '' }}"
+                 placeholder="e.g. HVAC Mid-Market Cadence" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" name="description" class="form-control"
+               value="{{ seq.description if seq else '' }}"
+               placeholder="Brief description of this sequence's purpose">
+      </div>
+    </div>
+  </div>
+
+  <div class="card form-section">
+    <div class="card-header">
+      <h2 class="card-title">Sequence Steps</h2>
+      <div style="display:flex; gap:0.5rem;">
+        <button type="button" class="btn btn-sm btn-ghost" onclick="addStep('Email')">
+          <i data-lucide="mail"></i> + Email
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost" onclick="addStep('LinkedIn')">
+          <i data-lucide="linkedin"></i> + LinkedIn
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost" onclick="addStep('Phone')">
+          <i data-lucide="phone"></i> + Phone
+        </button>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <!-- Channel Legend -->
+      <div class="channel-legend">
+        <span class="legend-item"><span class="dot-email-sm"></span> Email</span>
+        <span class="legend-item"><span class="dot-linkedin-sm"></span> LinkedIn</span>
+        <span class="legend-item"><span class="dot-phone-sm"></span> Phone</span>
+      </div>
+
+      <!-- Steps List -->
+      <div id="steps-container">
+        {% if seq and steps %}
+          {% for step in steps %}
+          <div class="builder-step" data-index="{{ loop.index0 }}">
+            <div class="builder-step-drag">
+              <i data-lucide="grip-vertical" style="color:var(--text-muted);"></i>
+            </div>
+            <div class="builder-step-dot dot-{{ step.channel.lower() }}"></div>
+            <div class="builder-step-body">
+              <div class="builder-step-row">
+                <div class="builder-day-input">
+                  <label style="font-size:0.75rem; color:var(--text-muted);">Day</label>
+                  <input type="number" name="step_day" value="{{ step.day_offset }}"
+                         min="1" max="365" class="form-control day-input" required>
+                </div>
+                <div style="flex:1;">
+                  <label style="font-size:0.75rem; color:var(--text-muted);">Channel</label>
+                  <select name="step_channel" class="form-control channel-select" onchange="updateStepStyle(this)">
+                    <option value="Email" {% if step.channel == 'Email' %}selected{% endif %}>Email</option>
+                    <option value="LinkedIn" {% if step.channel == 'LinkedIn' %}selected{% endif %}>LinkedIn</option>
+                    <option value="Phone" {% if step.channel == 'Phone' %}selected{% endif %}>Phone</option>
+                  </select>
+                </div>
+                <div style="flex:2;">
+                  <label style="font-size:0.75rem; color:var(--text-muted);">Touch Type</label>
+                  <select name="step_slot" class="form-control">
+                    {% for val, label in [
+                      ('observation','Signal Observation'),('hypothesis','Hypothesis'),
+                      ('proof','Proof / Social'),('soft_close','Soft Close'),('breakup','Breakup'),
+                      ('linkedin_connect','LinkedIn Connect'),('linkedin_dm','LinkedIn DM'),
+                      ('voicemail','Voicemail Script'),('live_call','Live Call Script'),
+                      ('link_clicked','Link Clicked Trigger'),('reply_received','Reply Trigger'),
+                      ('out_of_office','OOO Trigger'),('not_now','Not Now Trigger'),
+                    ] %}
+                    <option value="{{ val }}" {% if step.template_slot == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div style="display:flex; align-items:flex-end; gap:0.5rem;">
+                  <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; white-space:nowrap; margin-bottom:0.1rem;">
+                    <input type="checkbox" name="step_auto" value="{{ loop.index0 }}"
+                           {% if step.is_auto %}checked{% endif %}
+                           style="width:15px;height:15px;accent-color:var(--accent-1);">
+                    <span style="font-size:0.8rem;">Auto-send</span>
+                  </label>
+                  <button type="button" class="btn btn-xs btn-danger-ghost" onclick="removeStep(this)">
+                    <i data-lucide="x"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <!-- Default A-Account-style starter steps -->
+          {% set default_steps = [
+            (1, 'Email', 'observation', True),
+            (2, 'LinkedIn', 'linkedin_connect', False),
+            (4, 'Email', 'hypothesis', True),
+            (7, 'Phone', 'voicemail', False),
+            (9, 'Email', 'proof', True),
+          ] %}
+          {% for day, channel, slot, auto in default_steps %}
+          <div class="builder-step" data-index="{{ loop.index0 }}">
+            <div class="builder-step-drag"><i data-lucide="grip-vertical" style="color:var(--text-muted);"></i></div>
+            <div class="builder-step-dot dot-{{ channel.lower() }}"></div>
+            <div class="builder-step-body">
+              <div class="builder-step-row">
+                <div class="builder-day-input">
+                  <label style="font-size:0.75rem; color:var(--text-muted);">Day</label>
+                  <input type="number" name="step_day" value="{{ day }}" min="1" max="365" class="form-control day-input" required>
+                </div>
+                <div style="flex:1;">
+                  <label style="font-size:0.75rem; color:var(--text-muted);">Channel</label>
+                  <select name="step_channel" class="form-control channel-select" onchange="updateStepStyle(this)">
+                    <option value="Email" {% if channel == 'Email' %}selected{% endif %}>Email</option>
+                    <option value="LinkedIn" {% if channel == 'LinkedIn' %}selected{% endif %}>LinkedIn</option>
+                    <option value="Phone" {% if channel == 'Phone' %}selected{% endif %}>Phone</option>
+                  </select>
+                </div>
+                <div style="flex:2;">
+                  <label style="font-size:0.75rem; color:var(--text-muted);">Touch Type</label>
+                  <select name="step_slot" class="form-control">
+                    {% for val, label in [
+                      ('observation','Signal Observation'),('hypothesis','Hypothesis'),
+                      ('proof','Proof / Social'),('soft_close','Soft Close'),('breakup','Breakup'),
+                      ('linkedin_connect','LinkedIn Connect'),('linkedin_dm','LinkedIn DM'),
+                      ('voicemail','Voicemail Script'),('live_call','Live Call Script'),
+                    ] %}
+                    <option value="{{ val }}" {% if slot == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div style="display:flex; align-items:flex-end; gap:0.5rem;">
+                  <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; white-space:nowrap; margin-bottom:0.1rem;">
+                    <input type="checkbox" name="step_auto" value="{{ loop.index0 }}"
+                           {% if auto %}checked{% endif %}
+                           style="width:15px;height:15px;accent-color:var(--accent-1);">
+                    <span style="font-size:0.8rem;">Auto-send</span>
+                  </label>
+                  <button type="button" class="btn btn-xs btn-danger-ghost" onclick="removeStep(this)">
+                    <i data-lucide="x"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      <div id="empty-steps" style="display:none; text-align:center; padding:2rem; color:var(--text-muted);">
+        <i data-lucide="git-branch" style="width:32px;height:32px; margin-bottom:0.5rem;"></i>
+        <p>No steps yet. Add email, LinkedIn, or phone touches above.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:1rem; justify-content:flex-end;">
+    <a href="{{ url_for('sequences.list_sequences') }}" class="btn btn-ghost">Cancel</a>
+    <button type="submit" class="btn btn-primary btn-lg">
+      <i data-lucide="check"></i> {% if seq %}Save Changes{% else %}Create Sequence{% endif %}
+    </button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TOUCH_TYPES = [
+  ['observation','Signal Observation'],['hypothesis','Hypothesis'],
+  ['proof','Proof / Social'],['soft_close','Soft Close'],['breakup','Breakup'],
+  ['linkedin_connect','LinkedIn Connect'],['linkedin_dm','LinkedIn DM'],
+  ['voicemail','Voicemail Script'],['live_call','Live Call Script'],
+  ['link_clicked','Link Clicked Trigger'],['reply_received','Reply Trigger'],
+  ['out_of_office','OOO Trigger'],['not_now','Not Now Trigger'],
+];
+
+function getStepIndex() {
+  return document.querySelectorAll('.builder-step').length;
+}
+
+function addStep(channel) {
+  const container = document.getElementById('steps-container');
+  const idx = getStepIndex();
+  const lastDay = getLastDay();
+  const defaultDays = { Email: 3, LinkedIn: 1, Phone: 2 };
+  const suggestedDay = lastDay + (defaultDays[channel] || 2);
+
+  const div = document.createElement('div');
+  div.className = 'builder-step';
+  div.dataset.index = idx;
+
+  const dotClass = `dot-${channel.toLowerCase()}`;
+  const touchOptions = TOUCH_TYPES.map(([v, l]) =>
+    `<option value="${v}">${l}</option>`
+  ).join('');
+
+  div.innerHTML = `
+    <div class="builder-step-drag"><i data-lucide="grip-vertical" style="color:var(--text-muted);"></i></div>
+    <div class="builder-step-dot ${dotClass}"></div>
+    <div class="builder-step-body">
+      <div class="builder-step-row">
+        <div class="builder-day-input">
+          <label style="font-size:0.75rem; color:var(--text-muted);">Day</label>
+          <input type="number" name="step_day" value="${suggestedDay}" min="1" max="365" class="form-control day-input" required>
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:0.75rem; color:var(--text-muted);">Channel</label>
+          <select name="step_channel" class="form-control channel-select" onchange="updateStepStyle(this)">
+            <option value="Email" ${channel==='Email'?'selected':''}>Email</option>
+            <option value="LinkedIn" ${channel==='LinkedIn'?'selected':''}>LinkedIn</option>
+            <option value="Phone" ${channel==='Phone'?'selected':''}>Phone</option>
+          </select>
+        </div>
+        <div style="flex:2;">
+          <label style="font-size:0.75rem; color:var(--text-muted);">Touch Type</label>
+          <select name="step_slot" class="form-control">${touchOptions}</select>
+        </div>
+        <div style="display:flex; align-items:flex-end; gap:0.5rem;">
+          <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; white-space:nowrap; margin-bottom:0.1rem;">
+            <input type="checkbox" name="step_auto" value="${idx}"
+                   ${channel==='Email'?'checked':''} style="width:15px;height:15px;accent-color:var(--accent-1);">
+            <span style="font-size:0.8rem;">Auto-send</span>
+          </label>
+          <button type="button" class="btn btn-xs btn-danger-ghost" onclick="removeStep(this)">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  container.appendChild(div);
+  lucide.createIcons();
+  updateEmptyState();
+}
+
+function getLastDay() {
+  const inputs = document.querySelectorAll('input[name="step_day"]');
+  let max = 0;
+  inputs.forEach(i => { const v = parseInt(i.value); if (v > max) max = v; });
+  return max;
+}
+
+function removeStep(btn) {
+  btn.closest('.builder-step').remove();
+  updateEmptyState();
+}
+
+function updateStepStyle(select) {
+  const step = select.closest('.builder-step');
+  const dot = step.querySelector('.builder-step-dot');
+  dot.className = `builder-step-dot dot-${select.value.toLowerCase()}`;
+}
+
+function updateEmptyState() {
+  const steps = document.querySelectorAll('.builder-step');
+  document.getElementById('empty-steps').style.display = steps.length === 0 ? 'block' : 'none';
+}
+
+updateEmptyState();
+</script>
+{% endblock %}

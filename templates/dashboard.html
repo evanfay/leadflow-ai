@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-subtitle">Welcome back, {{ current_user.display_name or current_user.email }}</p>
+  </div>
+  <a href="{{ url_for('campaigns.create_campaign') }}" class="btn btn-primary">
+    <i data-lucide="plus"></i> New Campaign
+  </a>
+</div>
+
+<!-- Stats Row -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon stat-icon-orange">
+      <i data-lucide="send"></i>
+    </div>
+    <div class="stat-body">
+      <div class="stat-value">{{ active_campaigns }}</div>
+      <div class="stat-label">Active Campaigns</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon stat-icon-blue">
+      <i data-lucide="users"></i>
+    </div>
+    <div class="stat-body">
+      <div class="stat-value">{{ total_leads }}</div>
+      <div class="stat-label">Leads in Pool</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon stat-icon-amber">
+      <i data-lucide="check-square"></i>
+    </div>
+    <div class="stat-body">
+      <div class="stat-value">{{ tasks_pending }}</div>
+      <div class="stat-label">Tasks Pending</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon stat-icon-green">
+      <i data-lucide="message-square"></i>
+    </div>
+    <div class="stat-body">
+      <div class="stat-value">{{ replies_this_week }}</div>
+      <div class="stat-label">Replies This Week</div>
+    </div>
+  </div>
+</div>
+
+<!-- Main Content Grid -->
+<div class="dashboard-grid">
+
+  <!-- Active Campaigns -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Active Campaigns</h2>
+      <a href="{{ url_for('campaigns.list_campaigns') }}" class="card-link">View all</a>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if campaigns %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Campaign</th>
+            <th>Leads</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in campaigns %}
+          <tr>
+            <td>
+              <a href="{{ url_for('campaigns.detail', campaign_id=c.id) }}" class="table-link">
+                {{ c.name }}
+              </a>
+              <div style="font-size:0.78rem; color:var(--text-muted);">
+                {{ c.sequence.name if c.sequence else 'No sequence' }}
+              </div>
+            </td>
+            <td>
+              <span class="badge badge-gray">{{ c.active_lead_count }} active</span>
+            </td>
+            <td>
+              <span class="badge badge-green">Active</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <i data-lucide="send" style="width:32px;height:32px;color:var(--text-muted);"></i>
+        <p>No active campaigns yet.</p>
+        <a href="{{ url_for('campaigns.create_campaign') }}" class="btn btn-primary btn-sm">
+          Create your first campaign
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Pending Tasks -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Pending Tasks</h2>
+      <a href="{{ url_for('tasks.queue') }}" class="card-link">View all</a>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if pending_tasks %}
+      <div class="task-list">
+        {% for task in pending_tasks %}
+        <div class="task-item {% if task.is_overdue %}task-overdue{% endif %}">
+          <div class="task-icon">
+            {% if task.task_type == 'linkedin_connect' or task.task_type == 'linkedin_dm' %}
+              <i data-lucide="linkedin"></i>
+            {% elif task.task_type == 'voicemail' or task.task_type == 'live_call' %}
+              <i data-lucide="phone"></i>
+            {% elif task.task_type == 'respond_to_reply' %}
+              <i data-lucide="message-square"></i>
+            {% else %}
+              <i data-lucide="mail"></i>
+            {% endif %}
+          </div>
+          <div class="task-body">
+            <div class="task-title">{{ task.task_type.replace('_', ' ').title() }}</div>
+            <div class="task-note">{{ task.notes[:60] }}{% if task.notes|length > 60 %}…{% endif %}</div>
+          </div>
+          <div class="task-meta">
+            <span class="{% if task.is_overdue %}text-danger{% else %}text-muted{% endif %}" style="font-size:0.78rem;">
+              {{ task.due_date.strftime('%b %d') if task.due_date else '—' }}
+            </span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <i data-lucide="check-circle" style="width:32px;height:32px;color:var(--text-muted);"></i>
+        <p>All caught up — no pending tasks.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Recent Replies -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-header">
+      <h2 class="card-title">Unhandled Replies</h2>
+      <a href="{{ url_for('inbox.replies') }}" class="card-link">View inbox</a>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if recent_replies %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Lead</th>
+            <th>Category</th>
+            <th>Snippet</th>
+            <th>Received</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for reply in recent_replies %}
+          <tr>
+            <td>
+              {% set el = reply.enrolled_lead %}
+              {% set lead = el.lead %}
+              <div style="font-weight:600;">{{ lead.first_name }} {{ lead.last_name }}</div>
+              <div style="font-size:0.78rem; color:var(--text-muted);">{{ lead.company }}</div>
+            </td>
+            <td>
+              <span class="badge
+                {% if reply.reply_category == 'positive' %}badge-green
+                {% elif reply.reply_category == 'not_now' %}badge-amber
+                {% elif reply.reply_category == 'unsubscribe' %}badge-red
+                {% elif reply.reply_category == 'out_of_office' %}badge-gray
+                {% else %}badge-blue{% endif %}">
+                {{ reply.reply_category.replace('_', ' ').title() }}
+              </span>
+            </td>
+            <td style="color:var(--text-body); font-size:0.85rem; max-width:300px;">
+              {{ reply.snippet[:80] }}{% if reply.snippet|length > 80 %}…{% endif %}
+            </td>
+            <td style="color:var(--text-muted); font-size:0.85rem;">
+              {{ reply.received_at.strftime('%b %d') if reply.received_at else '—' }}
+            </td>
+            <td>
+              <a href="{{ url_for('inbox.replies') }}" class="btn btn-sm btn-ghost">Handle</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <i data-lucide="inbox" style="width:32px;height:32px;color:var(--text-muted);"></i>
+        <p>No unhandled replies — inbox clear.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

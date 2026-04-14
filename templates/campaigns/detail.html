@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign.name }} — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ campaign.name }}</h1>
+    <div style="display:flex; align-items:center; gap:0.75rem; margin-top:0.25rem;">
+      <span class="badge {% if campaign.status == 'active' %}badge-green{% elif campaign.status == 'paused' %}badge-amber{% else %}badge-gray{% endif %}">
+        {{ campaign.status.title() }}
+      </span>
+      <span style="color:var(--text-muted); font-size:0.875rem;">
+        {{ campaign.sequence.name if campaign.sequence else 'No sequence' }}
+      </span>
+      <span style="color:var(--text-muted); font-size:0.875rem;">·</span>
+      <span style="color:var(--text-muted); font-size:0.875rem;">{{ campaign.content_mode.title() }} mode</span>
+    </div>
+  </div>
+  <div style="display:flex; gap:0.75rem;">
+    {% if campaign.status == 'active' %}
+    <form method="POST" action="{{ url_for('campaigns.pause_campaign', campaign_id=campaign.id) }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <button type="submit" class="btn btn-ghost">
+        <i data-lucide="pause"></i> Pause
+      </button>
+    </form>
+    {% elif campaign.status == 'paused' %}
+    <form method="POST" action="{{ url_for('campaigns.resume_campaign', campaign_id=campaign.id) }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <button type="submit" class="btn btn-primary">
+        <i data-lucide="play"></i> Resume
+      </button>
+    </form>
+    {% endif %}
+    <a href="{{ url_for('campaigns.export_csv', campaign_id=campaign.id) }}" class="btn btn-ghost">
+      <i data-lucide="download"></i> Export
+    </a>
+    <a href="{{ url_for('campaigns.list_campaigns') }}" class="btn btn-ghost">
+      <i data-lucide="arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="stats-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom:1.5rem;">
+  <div class="stat-card stat-card-sm">
+    <div class="stat-value">{{ campaign.total_lead_count }}</div>
+    <div class="stat-label">Total Enrolled</div>
+  </div>
+  <div class="stat-card stat-card-sm">
+    <div class="stat-value">{{ campaign.active_lead_count }}</div>
+    <div class="stat-label">Active</div>
+  </div>
+  <div class="stat-card stat-card-sm">
+    <div class="stat-value">{{ total_sent }}</div>
+    <div class="stat-label">Emails Sent</div>
+  </div>
+  <div class="stat-card stat-card-sm">
+    <div class="stat-value">{{ replies|length }}</div>
+    <div class="stat-label">Replies</div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <a href="{{ url_for('campaigns.detail', campaign_id=campaign.id, tab='overview') }}"
+     class="tab {% if tab == 'overview' %}tab-active{% endif %}">
+    <i data-lucide="layout-dashboard"></i> Overview
+  </a>
+  <a href="{{ url_for('campaigns.detail', campaign_id=campaign.id, tab='review') }}"
+     class="tab {% if tab == 'review' %}tab-active{% endif %}">
+    <i data-lucide="eye"></i> Review Queue
+    {% if drafts %}<span class="tab-badge">{{ drafts|length }}</span>{% endif %}
+  </a>
+  <a href="{{ url_for('campaigns.detail', campaign_id=campaign.id, tab='tasks') }}"
+     class="tab {% if tab == 'tasks' %}tab-active{% endif %}">
+    <i data-lucide="check-square"></i> Tasks
+    {% if tasks %}<span class="tab-badge">{{ tasks|length }}</span>{% endif %}
+  </a>
+  <a href="{{ url_for('campaigns.detail', campaign_id=campaign.id, tab='replies') }}"
+     class="tab {% if tab == 'replies' %}tab-active{% endif %}">
+    <i data-lucide="message-square"></i> Replies
+    {% if replies %}<span class="tab-badge">{{ replies|selectattr('handled', 'equalto', False)|list|length }}</span>{% endif %}
+  </a>
+  <a href="{{ url_for('campaigns.detail', campaign_id=campaign.id, tab='stats') }}"
+     class="tab {% if tab == 'stats' %}tab-active{% endif %}">
+    <i data-lucide="bar-chart-2"></i> Stats
+  </a>
+</div>
+
+<div class="tab-content">
+
+  <!-- OVERVIEW TAB -->
+  {% if tab == 'overview' %}
+  <div class="overview-layout">
+    <!-- Sequence Timeline -->
+    {% if campaign.sequence %}
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Sequence: {{ campaign.sequence.name }}</h2>
+      </div>
+      <div class="card-body">
+        <div class="sequence-timeline">
+          {% for step in campaign.sequence.steps.order_by('day_offset') %}
+          <div class="timeline-step">
+            <div class="timeline-day">Day {{ step.day_offset }}</div>
+            <div class="timeline-dot
+              {% if step.channel == 'Email' %}dot-email
+              {% elif step.channel == 'LinkedIn' %}dot-linkedin
+              {% else %}dot-phone{% endif %}">
+            </div>
+            <div class="timeline-body">
+              <div class="timeline-channel">
+                {% if step.channel == 'Email' %}<i data-lucide="mail"></i>
+                {% elif step.channel == 'LinkedIn' %}<i data-lucide="linkedin"></i>
+                {% else %}<i data-lucide="phone"></i>{% endif %}
+                {{ step.channel }}
+              </div>
+              <div class="timeline-slot">{{ step.template_slot.replace('_', ' ').title() }}</div>
+              {% if not step.is_auto %}
+              <span class="badge badge-gray" style="font-size:0.65rem;">Manual</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Enroll Leads -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Enroll Leads</h2>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('campaigns.enroll_leads', campaign_id=campaign.id) }}" id="enroll-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:1rem;">
+            Go to the <a href="{{ url_for('leads.pool') }}">Lead Pool</a> to select leads and enroll them in bulk,
+            or enroll leads directly from a lead's detail page.
+          </p>
+          <a href="{{ url_for('leads.pool') }}" class="btn btn-primary">
+            <i data-lucide="users"></i> Go to Lead Pool
+          </a>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enrolled Leads Table -->
+  <div class="card" style="margin-top:1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title">Enrolled Leads ({{ enrolled|length }})</h2>
+      <div style="display:flex; gap:0.5rem; align-items:center;">
+        <a href="?tab=overview&status=" class="btn btn-xs {% if not status_filter %}btn-ghost-active{% else %}btn-ghost{% endif %}">All</a>
+        <a href="?tab=overview&status=active" class="btn btn-xs {% if status_filter == 'active' %}btn-ghost-active{% else %}btn-ghost{% endif %}">Active</a>
+        <a href="?tab=overview&status=paused" class="btn btn-xs {% if status_filter == 'paused' %}btn-ghost-active{% else %}btn-ghost{% endif %}">Paused</a>
+        <a href="?tab=overview&status=complete" class="btn btn-xs {% if status_filter == 'complete' %}btn-ghost-active{% else %}btn-ghost{% endif %}">Complete</a>
+      </div>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if enrolled %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Lead</th>
+            <th>Company</th>
+            <th>Status</th>
+            <th>Enrolled</th>
+            <th>Sends</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for el in enrolled %}
+          <tr>
+            <td>
+              <a href="{{ url_for('leads.detail', lead_id=el.lead.id) }}" class="table-link">
+                {{ el.lead.first_name }} {{ el.lead.last_name }}
+              </a>
+              <div style="font-size:0.78rem; color:var(--text-muted);">{{ el.lead.email }}</div>
+            </td>
+            <td style="color:var(--text-body);">{{ el.lead.company or '—' }}</td>
+            <td>
+              <span class="badge
+                {% if el.status == 'active' %}badge-green
+                {% elif el.status == 'paused' %}badge-amber
+                {% elif el.status == 'complete' %}badge-blue
+                {% elif el.status == 'unsubscribed' %}badge-red
+                {% else %}badge-gray{% endif %}">
+                {{ el.status.replace('_',' ').title() }}
+              </span>
+            </td>
+            <td style="color:var(--text-muted); font-size:0.85rem;">
+              {{ el.enrolled_at.strftime('%b %d') if el.enrolled_at else '—' }}
+            </td>
+            <td style="color:var(--text-muted);">{{ el.send_logs.count() }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <i data-lucide="users" style="width:32px;height:32px;color:var(--text-muted);"></i>
+        <p>No leads enrolled yet.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- REVIEW QUEUE TAB -->
+  {% elif tab == 'review' %}
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Pending Drafts ({{ drafts|length }})</h2>
+      <p class="card-subtitle">Review AI-generated emails before they send</p>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if drafts %}
+      {% for draft in drafts %}
+      <div class="draft-card">
+        <div class="draft-header">
+          <div>
+            <div class="draft-lead">
+              {% set el = draft.enrolled_lead %}
+              {% set lead = el.lead %}
+              <strong>{{ lead.first_name }} {{ lead.last_name }}</strong>
+              <span style="color:var(--text-muted);">at {{ lead.company }}</span>
+            </div>
+            <div class="draft-subject">{{ draft.subject }}</div>
+          </div>
+          <span class="badge badge-amber">Draft</span>
+        </div>
+        <div class="draft-body">{{ draft.body_snippet }}</div>
+        <div class="draft-actions">
+          <!-- Approve -->
+          <form method="POST" action="{{ url_for('campaigns.approve_draft', campaign_id=campaign.id, draft_id=draft.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+            <button type="submit" class="btn btn-sm btn-primary">
+              <i data-lucide="send"></i> Approve & Send
+            </button>
+          </form>
+          <!-- Edit Modal Trigger -->
+          <button class="btn btn-sm btn-ghost" onclick="openEditDraft({{ draft.id }}, '{{ draft.subject|replace("'", "\\'")|replace('"', '\\"') }}', `{{ draft.body_snippet|replace('`', '\\`') }}`)">
+            <i data-lucide="pencil"></i> Edit
+          </button>
+          <!-- Skip -->
+          <form method="POST" action="{{ url_for('campaigns.skip_draft', campaign_id=campaign.id, draft_id=draft.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+            <button type="submit" class="btn btn-sm btn-ghost" onclick="return confirm('Skip this draft?')">
+              <i data-lucide="skip-forward"></i> Skip
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="empty-state">
+        <i data-lucide="check-circle" style="width:32px;height:32px;color:var(--text-muted);"></i>
+        <p>No pending drafts — all caught up!</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- TASKS TAB -->
+  {% elif tab == 'tasks' %}
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Campaign Tasks ({{ tasks|length }})</h2>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if tasks %}
+      <table class="table">
+        <thead>
+          <tr><th>Type</th><th>Lead</th><th>Due</th><th>Notes</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for task in tasks %}
+          <tr class="{% if task.is_overdue %}row-overdue{% endif %}">
+            <td>
+              <span class="badge badge-gray">{{ task.task_type.replace('_',' ').title() }}</span>
+            </td>
+            <td>
+              {% if task.enrolled_lead %}
+              <a href="{{ url_for('leads.detail', lead_id=task.enrolled_lead.lead_id) }}" class="table-link">
+                {{ task.enrolled_lead.lead.first_name }} {{ task.enrolled_lead.lead.last_name }}
+              </a>
+              {% else %}—{% endif %}
+            </td>
+            <td class="{% if task.is_overdue %}text-danger{% else %}text-muted{% endif %}" style="font-size:0.85rem;">
+              {{ task.due_date.strftime('%b %d') if task.due_date else '—' }}
+            </td>
+            <td style="color:var(--text-muted); font-size:0.85rem; max-width:250px;">
+              {{ task.notes[:60] if task.notes else '—' }}
+            </td>
+            <td>
+              <form method="POST" action="{{ url_for('tasks.complete_task', task_id=task.id) }}" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+                <button type="submit" class="btn btn-xs btn-ghost">Done</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <i data-lucide="check-circle" style="width:32px;height:32px;color:var(--text-muted);"></i>
+        <p>No pending tasks for this campaign.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- REPLIES TAB -->
+  {% elif tab == 'replies' %}
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Replies ({{ replies|length }})</h2>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if replies %}
+      <table class="table">
+        <thead>
+          <tr><th>Lead</th><th>Category</th><th>Snippet</th><th>Received</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for reply in replies %}
+          <tr>
+            <td>
+              {% set lead = reply.enrolled_lead.lead %}
+              <a href="{{ url_for('leads.detail', lead_id=lead.id) }}" class="table-link">
+                {{ lead.first_name }} {{ lead.last_name }}
+              </a>
+            </td>
+            <td>
+              <span class="badge {% if reply.reply_category == 'positive' %}badge-green{% elif reply.reply_category == 'not_now' %}badge-amber{% elif reply.reply_category == 'unsubscribe' %}badge-red{% else %}badge-gray{% endif %}">
+                {{ reply.reply_category.replace('_',' ').title() }}
+              </span>
+            </td>
+            <td style="max-width:250px; color:var(--text-body); font-size:0.85rem;">
+              {{ reply.snippet[:80] if reply.snippet else '—' }}
+            </td>
+            <td style="color:var(--text-muted); font-size:0.85rem;">
+              {{ reply.received_at.strftime('%b %d') if reply.received_at else '—' }}
+            </td>
+            <td>
+              {% if reply.handled %}
+              <span class="badge badge-gray">Handled</span>
+              {% else %}
+              <a href="{{ url_for('inbox.replies') }}" class="btn btn-xs btn-ghost">Handle</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <i data-lucide="message-square" style="width:32px;height:32px;color:var(--text-muted);"></i>
+        <p>No replies yet for this campaign.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- STATS TAB -->
+  {% elif tab == 'stats' %}
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Campaign Performance</h2>
+    </div>
+    <div class="card-body">
+      <div class="stats-grid" style="grid-template-columns: repeat(3,1fr); margin-bottom:2rem;">
+        <div class="stat-card">
+          <div class="stat-value">{{ total_sent }}</div>
+          <div class="stat-label">Emails Sent</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{{ replies|length }}</div>
+          <div class="stat-label">Replies</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">
+            {% if total_sent > 0 %}{{ "%.1f"|format(replies|length / total_sent * 100) }}%{% else %}—{% endif %}
+          </div>
+          <div class="stat-label">Reply Rate</div>
+        </div>
+      </div>
+      <p style="color:var(--text-muted); font-size:0.875rem; text-align:center;">
+        Detailed A/B variant analytics coming soon.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Edit Draft Modal -->
+<div class="modal-overlay" id="edit-draft-modal" style="display:none;">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <h3>Edit Draft</h3>
+      <button class="modal-close" onclick="closeEditDraft()"><i data-lucide="x"></i></button>
+    </div>
+    <form method="POST" id="edit-draft-form" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Subject</label>
+          <input type="text" name="subject" id="edit-subject" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Body</label>
+          <textarea name="body" id="edit-body" class="form-control" rows="10"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeEditDraft()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save & Close</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openEditDraft(draftId, subject, body) {
+  document.getElementById('edit-subject').value = subject;
+  document.getElementById('edit-body').value = body;
+  document.getElementById('edit-draft-form').action = '/campaigns/{{ campaign.id }}/drafts/' + draftId + '/edit';
+  document.getElementById('edit-draft-modal').style.display = 'flex';
+}
+function closeEditDraft() {
+  document.getElementById('edit-draft-modal').style.display = 'none';
+}
+document.getElementById('edit-draft-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeEditDraft();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}LeadFlow AI{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    {% if logo_exists %}
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="sidebar-logo-img">
+    {% else %}
+    <span class="logo-icon">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="8" fill="url(#logo-grad)"/>
+        <path d="M8 14l4 4 8-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs><linearGradient id="logo-grad" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#F97316"/><stop offset="1" stop-color="#F59E0B"/></linearGradient></defs>
+      </svg>
+    </span>
+    <span class="logo-text">LeadFlow <span class="logo-accent">AI</span></span>
+    {% endif %}
+  </div>
+
+  <nav class="sidebar-nav">
+    <a href="{{ url_for('dashboard.index') }}" class="nav-item {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
+      <i data-lucide="layout-dashboard" class="nav-icon"></i>
+      <span>Dashboard</span>
+    </a>
+    <a href="{{ url_for('campaigns.list_campaigns') }}" class="nav-item {% if request.blueprint == 'campaigns' %}active{% endif %}">
+      <i data-lucide="send" class="nav-icon"></i>
+      <span>Campaigns</span>
+    </a>
+    <a href="{{ url_for('tasks.queue') }}" class="nav-item {% if request.blueprint == 'tasks' %}active{% endif %}">
+      <i data-lucide="check-square" class="nav-icon"></i>
+      <span>Task Queue</span>
+      <span class="nav-badge" id="badge-tasks" style="display:none">0</span>
+    </a>
+    <a href="{{ url_for('inbox.replies') }}" class="nav-item {% if request.blueprint == 'inbox' %}active{% endif %}">
+      <i data-lucide="inbox" class="nav-icon"></i>
+      <span>Reply Inbox</span>
+      <span class="nav-badge" id="badge-replies" style="display:none">0</span>
+    </a>
+    <a href="{{ url_for('leads.pool') }}" class="nav-item {% if request.blueprint == 'leads' %}active{% endif %}">
+      <i data-lucide="users" class="nav-icon"></i>
+      <span>Leads</span>
+    </a>
+    <a href="{{ url_for('sequences.list_sequences') }}" class="nav-item {% if request.blueprint == 'sequences' %}active{% endif %}">
+      <i data-lucide="git-branch" class="nav-icon"></i>
+      <span>Sequences</span>
+    </a>
+    <a href="{{ url_for('scraper.index') }}" class="nav-item {% if request.blueprint == 'scraper' %}active{% endif %}">
+      <i data-lucide="search" class="nav-icon"></i>
+      <span>Scraper</span>
+    </a>
+    <a href="{{ url_for('settings.deliverability') }}" class="nav-item {% if request.endpoint == 'settings.deliverability' %}active{% endif %}">
+      <i data-lucide="shield-check" class="nav-icon"></i>
+      <span>Deliverability</span>
+    </a>
+    <a href="{{ url_for('settings.index') }}" class="nav-item {% if request.blueprint == 'settings' and request.endpoint != 'settings.deliverability' %}active{% endif %}">
+      <i data-lucide="settings" class="nav-icon"></i>
+      <span>Settings</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">
+    {% if current_user.is_authenticated %}
+    <div class="sidebar-user">
+      <div class="user-avatar">{{ (current_user.display_name or current_user.email)[0].upper() }}</div>
+      <div class="user-info">
+        <div class="user-name">{{ current_user.display_name or current_user.email }}</div>
+        <div class="user-role">{% if current_user.is_admin %}Admin{% else %}User{% endif %}</div>
+      </div>
+    </div>
+    <a href="{{ url_for('auth.logout') }}" class="btn-logout" title="Sign out">
+      <i data-lucide="log-out"></i>
+    </a>
+    {% endif %}
+  </div>
+</aside>
+
+<!-- Main Content -->
+<div class="main-content">
+  <div class="content-inner">
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-container">
+      {% for category, message in messages %}
+      <div class="flash flash-{{ category }}">
+        <i data-lucide="{% if category == 'success' %}check-circle{% elif category == 'danger' %}x-circle{% elif category == 'warning' %}alert-triangle{% else %}info{% endif %}"></i>
+        <span>{{ message }}</span>
+        <button class="flash-close" onclick="this.parentElement.remove()">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script>
+  lucide.createIcons();
+
+  // Load nav badge counts
+  function loadNavCounts() {
+    fetch('/api/nav-counts')
+      .then(r => r.json())
+      .then(data => {
+        const tb = document.getElementById('badge-tasks');
+        const rb = document.getElementById('badge-replies');
+        if (data.tasks > 0) { tb.textContent = data.tasks; tb.style.display = ''; }
+        else { tb.style.display = 'none'; }
+        if (data.replies > 0) { rb.textContent = data.replies; rb.style.display = ''; }
+        else { rb.style.display = 'none'; }
+      })
+      .catch(() => {});
+  }
+
+  loadNavCounts();
+  setInterval(loadNavCounts, 60000);
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

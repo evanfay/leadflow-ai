@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ seq.name }} — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ seq.name }}</h1>
+    <p class="page-subtitle">{{ seq.description or 'Multi-touch outreach sequence' }}</p>
+  </div>
+  <div style="display:flex; gap:0.75rem;">
+    {% if not seq.is_builtin %}
+    <a href="{{ url_for('sequences.edit_sequence', seq_id=seq.id) }}" class="btn btn-ghost">
+      <i data-lucide="pencil"></i> Edit
+    </a>
+    {% endif %}
+    <a href="{{ url_for('sequences.list_sequences') }}" class="btn btn-ghost">
+      <i data-lucide="arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<div class="detail-layout">
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Sequence Steps ({{ steps|length }})</h2>
+        <div style="display:flex; gap:0.75rem;">
+          <span class="badge {% if seq.is_builtin %}badge-orange{% else %}badge-gray{% endif %}">
+            {% if seq.is_builtin %}Built-in{% else %}Custom{% endif %}
+          </span>
+          <span style="color:var(--text-muted); font-size:0.85rem;">{{ seq.duration_days }} days total</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="sequence-timeline-full">
+          {% for step in steps %}
+          <div class="timeline-step-full">
+            <div class="timeline-left">
+              <div class="timeline-day-badge">Day {{ step.day_offset }}</div>
+              {% if not loop.last %}
+              <div class="timeline-connector"></div>
+              {% endif %}
+            </div>
+            <div class="timeline-right">
+              <div class="timeline-step-card {% if step.channel == 'Email' %}step-email{% elif step.channel == 'LinkedIn' %}step-linkedin{% else %}step-phone{% endif %}">
+                <div class="timeline-step-icon">
+                  {% if step.channel == 'Email' %}<i data-lucide="mail"></i>
+                  {% elif step.channel == 'LinkedIn' %}<i data-lucide="linkedin"></i>
+                  {% else %}<i data-lucide="phone"></i>{% endif %}
+                </div>
+                <div class="timeline-step-content">
+                  <div class="timeline-step-title">{{ step.template_slot.replace('_',' ').title() }}</div>
+                  <div class="timeline-step-meta">
+                    {{ step.channel }}
+                    {% if step.is_auto %}
+                    <span class="badge badge-green" style="font-size:0.65rem; margin-left:0.25rem;">Auto</span>
+                    {% else %}
+                    <span class="badge badge-gray" style="font-size:0.65rem; margin-left:0.25rem;">Manual task</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% else %}
+          <p style="color:var(--text-muted);">No steps defined.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">Summary</h2></div>
+      <div class="card-body">
+        <dl class="detail-list">
+          <dt>Total touches</dt><dd>{{ steps|length }}</dd>
+          <dt>Duration</dt><dd>{{ seq.duration_days }} days</dd>
+          <dt>Email steps</dt><dd>{{ steps|selectattr('channel','equalto','Email')|list|length }}</dd>
+          <dt>LinkedIn steps</dt><dd>{{ steps|selectattr('channel','equalto','LinkedIn')|list|length }}</dd>
+          <dt>Phone steps</dt><dd>{{ steps|selectattr('channel','equalto','Phone')|list|length }}</dd>
+          <dt>Auto steps</dt><dd>{{ steps|selectattr('is_auto','equalto',True)|list|length }}</dd>
+          <dt>Manual tasks</dt><dd>{{ steps|selectattr('is_auto','equalto',False)|list|length }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="card-header"><h2 class="card-title">Use This Sequence</h2></div>
+      <div class="card-body">
+        <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:1rem;">
+          Create a campaign using this sequence to start sending to your leads.
+        </p>
+        <a href="{{ url_for('campaigns.create_campaign') }}" class="btn btn-primary">
+          <i data-lucide="plus"></i> Create Campaign
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

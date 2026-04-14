@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}Templates — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Email Templates</h1>
+    <p class="page-subtitle">Built-in and custom templates for your sequences</p>
+  </div>
+  <button class="btn btn-primary" onclick="document.getElementById('create-modal').style.display='flex'">
+    <i data-lucide="plus"></i> New Template
+  </button>
+</div>
+
+<!-- Settings Nav -->
+<div class="settings-nav">
+  <a href="{{ url_for('settings.index') }}" class="settings-nav-item">
+    <i data-lucide="sliders"></i> General
+  </a>
+  <a href="{{ url_for('settings.email_accounts') }}" class="settings-nav-item">
+    <i data-lucide="mail"></i> Email Accounts
+  </a>
+  <a href="{{ url_for('settings.templates') }}" class="settings-nav-item active">
+    <i data-lucide="file-text"></i> Templates
+  </a>
+  <a href="{{ url_for('settings.profile') }}" class="settings-nav-item">
+    <i data-lucide="user"></i> Profile
+  </a>
+  {% if current_user.is_admin %}
+  <a href="{{ url_for('auth.admin_users') }}" class="settings-nav-item">
+    <i data-lucide="users"></i> Users
+  </a>
+  {% endif %}
+</div>
+
+<!-- Built-in Templates -->
+<div style="margin-bottom:2rem;">
+  <h2 class="section-heading">
+    <i data-lucide="star" style="width:16px;height:16px;color:var(--accent-1);"></i>
+    Small Axe Playbook (Built-in)
+  </h2>
+  <div class="template-grid">
+    {% for t in builtin %}
+    <div class="template-card">
+      <div class="template-card-header">
+        <span class="badge badge-{{ 'orange' if t.touch_type in ['observation','hypothesis'] else 'blue' if t.touch_type in ['proof','soft_close'] else 'red' if t.touch_type == 'breakup' else 'gray' }}">
+          {{ t.touch_type.replace('_',' ').title() }}
+        </span>
+        <span class="badge badge-orange" style="font-size:0.65rem;">Built-in</span>
+      </div>
+      <div class="template-name">{{ t.name }}</div>
+      {% if t.subject %}
+      <div class="template-subject">{{ t.subject }}</div>
+      {% endif %}
+      <div class="template-preview">{{ t.body[:120] }}…</div>
+      <div class="template-footer">
+        <button class="btn btn-xs btn-ghost" onclick="previewTemplate('{{ t.name|replace("'","\\'") }}', '{{ t.subject|replace("'","\\'") }}', `{{ t.body|replace('`','\\`')|replace('\n','\\n') }}`)">
+          <i data-lucide="eye"></i> Preview
+        </button>
+      </div>
+    </div>
+    {% else %}
+    <p style="color:var(--text-muted);">No built-in templates loaded.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Custom Templates -->
+<div>
+  <h2 class="section-heading">
+    <i data-lucide="edit" style="width:16px;height:16px;color:var(--text-muted);"></i>
+    My Templates ({{ custom|length }})
+  </h2>
+  {% if custom %}
+  <div class="template-grid">
+    {% for t in custom %}
+    <div class="template-card">
+      <div class="template-card-header">
+        <span class="badge badge-gray">{{ t.touch_type.replace('_',' ').title() }}</span>
+      </div>
+      <div class="template-name">{{ t.name }}</div>
+      {% if t.subject %}
+      <div class="template-subject">{{ t.subject }}</div>
+      {% endif %}
+      <div class="template-preview">{{ t.body[:120] if t.body else '—' }}{% if t.body and t.body|length > 120 %}…{% endif %}</div>
+      <div class="template-footer">
+        <button class="btn btn-xs btn-ghost"
+                onclick="editTemplate({{ t.id }}, '{{ t.name|replace("'","\\'") }}', '{{ t.touch_type }}', '{{ t.subject|replace("'","\\'") }}', `{{ t.body|replace('`','\\`') }}`)">
+          <i data-lucide="pencil"></i> Edit
+        </button>
+        <form method="POST" action="{{ url_for('settings.delete_template', template_id=t.id) }}"
+              style="display:inline;" onsubmit="return confirm('Delete template?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <button type="submit" class="btn btn-xs btn-danger-ghost">
+            <i data-lucide="trash-2"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-page-state" style="padding:2.5rem;">
+    <div class="empty-icon"><i data-lucide="file-text"></i></div>
+    <h3>No custom templates yet</h3>
+    <p>Create your own templates to use alongside the built-in ones.</p>
+    <button class="btn btn-primary" onclick="document.getElementById('create-modal').style.display='flex'">
+      <i data-lucide="plus"></i> Create Template
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Create Template Modal -->
+<div class="modal-overlay" id="create-modal" style="display:none;">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <h3>New Template</h3>
+      <button class="modal-close" onclick="document.getElementById('create-modal').style.display='none'">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <form method="POST" action="{{ url_for('settings.create_template') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label">Template Name <span class="required">*</span></label>
+            <input type="text" name="name" class="form-control" placeholder="e.g. My Signal Observation" required>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">Touch Type <span class="required">*</span></label>
+            <select name="touch_type" class="form-control" required>
+              {% for val, label in [
+                ('observation','Signal Observation'), ('hypothesis','Hypothesis'),
+                ('proof','Proof'), ('soft_close','Soft Close'), ('breakup','Breakup'),
+                ('linkedin_connect','LinkedIn Connect'), ('linkedin_dm','LinkedIn DM'),
+                ('voicemail','Voicemail'), ('live_call','Live Call'),
+                ('link_clicked','Link Clicked'), ('reply_received','Reply'),
+                ('out_of_office','OOO'), ('not_now','Not Now'),
+              ] %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subject Line</label>
+          <input type="text" name="subject" class="form-control"
+                 placeholder="Use {{first_name}}, {{company}} as placeholders">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Body <span class="required">*</span></label>
+          <textarea name="body" class="form-control" rows="10" required
+                    placeholder="Hi {{first_name}},&#10;&#10;[your email body here]&#10;&#10;Best,&#10;{{your_name}}"></textarea>
+          <div class="form-hint">
+            Available placeholders: <code>{{first_name}}</code>, <code>{{last_name}}</code>,
+            <code>{{company}}</code>, <code>{{signal_1}}</code>, <code>{{signal_2}}</code>,
+            <code>{{calendly_link}}</code>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('create-modal').style.display='none'">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Template</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Template Modal -->
+<div class="modal-overlay" id="edit-modal" style="display:none;">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <h3>Edit Template</h3>
+      <button class="modal-close" onclick="document.getElementById('edit-modal').style.display='none'">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <form method="POST" id="edit-template-form" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label">Template Name</label>
+            <input type="text" name="name" id="edit-name" class="form-control" required>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label class="form-label">Touch Type</label>
+            <select name="touch_type" id="edit-touch-type" class="form-control">
+              {% for val, label in [
+                ('observation','Signal Observation'), ('hypothesis','Hypothesis'),
+                ('proof','Proof'), ('soft_close','Soft Close'), ('breakup','Breakup'),
+                ('linkedin_connect','LinkedIn Connect'), ('linkedin_dm','LinkedIn DM'),
+                ('voicemail','Voicemail'), ('live_call','Live Call'),
+              ] %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subject</label>
+          <input type="text" name="subject" id="edit-subject" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Body</label>
+          <textarea name="body" id="edit-body" class="form-control" rows="10"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('edit-modal').style.display='none'">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal-overlay" id="preview-modal" style="display:none;">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <h3 id="preview-title">Template Preview</h3>
+      <button class="modal-close" onclick="document.getElementById('preview-modal').style.display='none'">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Subject</label>
+        <div id="preview-subject" class="code-block"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Body</label>
+        <div id="preview-body" class="code-block" style="white-space:pre-wrap; max-height:400px; overflow-y:auto;"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('preview-modal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function editTemplate(id, name, touchType, subject, body) {
+  document.getElementById('edit-name').value = name;
+  document.getElementById('edit-touch-type').value = touchType;
+  document.getElementById('edit-subject').value = subject;
+  document.getElementById('edit-body').value = body;
+  document.getElementById('edit-template-form').action = `/settings/templates/${id}`;
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function previewTemplate(name, subject, body) {
+  document.getElementById('preview-title').textContent = name;
+  document.getElementById('preview-subject').textContent = subject || '(no subject)';
+  document.getElementById('preview-body').textContent = body.replace(/\\n/g, '\n');
+  document.getElementById('preview-modal').style.display = 'flex';
+}
+
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.style.display = 'none';
+  });
+});
+</script>
+{% endblock %}

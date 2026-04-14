@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Sequences — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Sequences</h1>
+    <p class="page-subtitle">Multi-touch cadences for your campaigns</p>
+  </div>
+  <a href="{{ url_for('sequences.create_sequence') }}" class="btn btn-primary">
+    <i data-lucide="plus"></i> Build Sequence
+  </a>
+</div>
+
+<!-- Built-in Sequences -->
+<div style="margin-bottom:2rem;">
+  <h2 class="section-heading">
+    <i data-lucide="star" style="width:16px;height:16px;color:var(--accent-1);"></i>
+    Built-in Sequences
+  </h2>
+  <div class="card-grid">
+    {% for seq in builtin %}
+    <div class="sequence-card">
+      <div class="sequence-card-header">
+        <div>
+          <h3 class="sequence-name">{{ seq.name }}</h3>
+          <p class="sequence-desc">{{ seq.description }}</p>
+        </div>
+        <span class="badge badge-orange">Built-in</span>
+      </div>
+      <div class="sequence-stats">
+        <div class="seq-stat">
+          <i data-lucide="layers" style="width:14px;height:14px;"></i>
+          {{ seq.step_count }} touches
+        </div>
+        <div class="seq-stat">
+          <i data-lucide="calendar" style="width:14px;height:14px;"></i>
+          {{ seq.duration_days }} days
+        </div>
+        <div class="seq-stat">
+          <i data-lucide="mail" style="width:14px;height:14px;"></i>
+          {{ seq.email_count }} emails
+        </div>
+      </div>
+      <div class="sequence-steps-preview">
+        {% for step in seq.steps.order_by('day_offset').limit(6) %}
+        <div class="step-pill step-pill-{{ step.channel.lower() }}" title="Day {{ step.day_offset }}: {{ step.channel }} — {{ step.template_slot }}">
+          {% if step.channel == 'Email' %}<i data-lucide="mail"></i>
+          {% elif step.channel == 'LinkedIn' %}<i data-lucide="linkedin"></i>
+          {% else %}<i data-lucide="phone"></i>{% endif %}
+          <span>D{{ step.day_offset }}</span>
+        </div>
+        {% endfor %}
+        {% if seq.step_count > 6 %}
+        <div class="step-pill step-pill-more">+{{ seq.step_count - 6 }}</div>
+        {% endif %}
+      </div>
+      <div class="sequence-card-footer">
+        <a href="{{ url_for('sequences.view_sequence', seq_id=seq.id) }}" class="btn btn-sm btn-ghost">
+          <i data-lucide="eye"></i> View
+        </a>
+      </div>
+    </div>
+    {% else %}
+    <p style="color:var(--text-muted);">No built-in sequences loaded yet.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Custom Sequences -->
+<div>
+  <h2 class="section-heading">
+    <i data-lucide="settings" style="width:16px;height:16px;color:var(--text-muted);"></i>
+    Custom Sequences
+  </h2>
+  {% if custom %}
+  <div class="card-grid">
+    {% for seq in custom %}
+    <div class="sequence-card">
+      <div class="sequence-card-header">
+        <div>
+          <h3 class="sequence-name">{{ seq.name }}</h3>
+          <p class="sequence-desc">{{ seq.description or 'Custom sequence' }}</p>
+        </div>
+        <span class="badge badge-gray">Custom</span>
+      </div>
+      <div class="sequence-stats">
+        <div class="seq-stat">
+          <i data-lucide="layers" style="width:14px;height:14px;"></i>
+          {{ seq.step_count }} touches
+        </div>
+        <div class="seq-stat">
+          <i data-lucide="calendar" style="width:14px;height:14px;"></i>
+          {{ seq.duration_days }} days
+        </div>
+      </div>
+      <div class="sequence-steps-preview">
+        {% for step in seq.steps.order_by('day_offset').limit(6) %}
+        <div class="step-pill step-pill-{{ step.channel.lower() }}" title="Day {{ step.day_offset }}: {{ step.channel }}">
+          {% if step.channel == 'Email' %}<i data-lucide="mail"></i>
+          {% elif step.channel == 'LinkedIn' %}<i data-lucide="linkedin"></i>
+          {% else %}<i data-lucide="phone"></i>{% endif %}
+          <span>D{{ step.day_offset }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="sequence-card-footer">
+        <div style="display:flex; gap:0.5rem;">
+          <a href="{{ url_for('sequences.view_sequence', seq_id=seq.id) }}" class="btn btn-sm btn-ghost">
+            <i data-lucide="eye"></i> View
+          </a>
+          <a href="{{ url_for('sequences.edit_sequence', seq_id=seq.id) }}" class="btn btn-sm btn-ghost">
+            <i data-lucide="pencil"></i> Edit
+          </a>
+          <form method="POST" action="{{ url_for('sequences.delete_sequence', seq_id=seq.id) }}"
+                onsubmit="return confirm('Delete sequence {{ seq.name }}?')" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+            <button type="submit" class="btn btn-sm btn-danger-ghost">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-page-state" style="padding:3rem;">
+    <div class="empty-icon"><i data-lucide="git-branch"></i></div>
+    <h2>No custom sequences yet</h2>
+    <p>Build a custom sequence to match your specific outreach strategy.</p>
+    <a href="{{ url_for('sequences.create_sequence') }}" class="btn btn-primary">
+      <i data-lucide="plus"></i> Build Sequence
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Profile — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Your Profile</h1>
+    <p class="page-subtitle">Manage your account settings and API keys</p>
+  </div>
+</div>
+
+<!-- Settings Nav -->
+<div class="settings-nav">
+  <a href="{{ url_for('settings.index') }}" class="settings-nav-item">
+    <i data-lucide="sliders"></i> General
+  </a>
+  <a href="{{ url_for('settings.email_accounts') }}" class="settings-nav-item">
+    <i data-lucide="mail"></i> Email Accounts
+  </a>
+  <a href="{{ url_for('settings.templates') }}" class="settings-nav-item">
+    <i data-lucide="file-text"></i> Templates
+  </a>
+  <a href="{{ url_for('settings.profile') }}" class="settings-nav-item active">
+    <i data-lucide="user"></i> Profile
+  </a>
+  {% if current_user.is_admin %}
+  <a href="{{ url_for('auth.admin_users') }}" class="settings-nav-item">
+    <i data-lucide="users"></i> Users
+  </a>
+  {% endif %}
+</div>
+
+<div class="settings-layout">
+
+  <!-- Profile Info -->
+  <div style="display:flex; flex-direction:column; gap:1.5rem;">
+
+    <div class="card form-section">
+      <div class="card-header"><h2 class="card-title">Profile Info</h2></div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('settings.update_profile') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <input type="hidden" name="action" value="profile">
+
+          <div class="form-group">
+            <label class="form-label">Email Address</label>
+            <input type="text" class="form-control" value="{{ current_user.email }}" disabled
+                   style="background:var(--bg-alt); color:var(--text-muted);">
+            <div class="form-hint">Email cannot be changed. Contact an admin if needed.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Display Name</label>
+            <input type="text" name="display_name" class="form-control"
+                   value="{{ current_user.display_name or '' }}"
+                   placeholder="Your full name (used in email sign-offs)">
+            <div class="form-hint">
+              The first word of your display name is used as the email sign-off.
+              e.g. "Evan Miller" → signs off as "Evan"
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Email Signature</label>
+            <textarea name="signature" class="form-control" rows="4"
+                      placeholder="Evan Miller&#10;FlowState AI&#10;(215) 555-0123&#10;flowstate.ai">{{ current_user.signature or '' }}</textarea>
+            <div class="form-hint">Appended to every email after a double dash separator.</div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="save"></i> Save Profile
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Anthropic API Key -->
+    <div class="card form-section">
+      <div class="card-header">
+        <h2 class="card-title">Anthropic API Key</h2>
+        <span class="badge {% if current_user.anthropic_api_key_encrypted %}badge-green{% else %}badge-gray{% endif %}">
+          {% if current_user.anthropic_api_key_encrypted %}Configured{% else %}Not set{% endif %}
+        </span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('settings.update_profile') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <input type="hidden" name="action" value="api_key">
+
+          <div class="form-group">
+            <label class="form-label">API Key</label>
+            <div class="input-with-icon">
+              <i data-lucide="key" class="input-icon"></i>
+              <input type="password" name="anthropic_api_key" id="api-key-input"
+                     class="form-control input-icon-left"
+                     placeholder="sk-ant-api03-…"
+                     autocomplete="off">
+              <button type="button" class="input-icon-right btn-icon" onclick="toggleApiKey()"
+                      title="Show/hide key" style="right:0.75rem; top:50%; transform:translateY(-50%); position:absolute; background:none; border:none; cursor:pointer; color:var(--text-muted);">
+                <i data-lucide="eye" id="api-eye-icon"></i>
+              </button>
+            </div>
+            <div class="form-hint">
+              Used for AI email generation and scoring. Get your key at
+              <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>.
+              Stored encrypted.
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="key"></i> Update API Key
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Change Password -->
+  <div>
+    <div class="card form-section">
+      <div class="card-header"><h2 class="card-title">Change Password</h2></div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('settings.update_profile') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <input type="hidden" name="action" value="password">
+
+          <div class="form-group">
+            <label class="form-label">Current Password</label>
+            <input type="password" name="current_password" class="form-control"
+                   placeholder="••••••••" autocomplete="current-password">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">New Password</label>
+            <input type="password" name="new_password" class="form-control"
+                   placeholder="Min 8 characters" minlength="8" autocomplete="new-password">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" name="confirm_password" class="form-control"
+                   placeholder="Repeat new password" autocomplete="new-password">
+          </div>
+
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="lock"></i> Change Password
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Account Info -->
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="card-header"><h2 class="card-title">Account Info</h2></div>
+      <div class="card-body">
+        <dl class="detail-list">
+          <dt>Email</dt>
+          <dd>{{ current_user.email }}</dd>
+          <dt>Role</dt>
+          <dd>{% if current_user.is_admin %}<span class="badge badge-orange">Admin</span>{% else %}<span class="badge badge-gray">User</span>{% endif %}</dd>
+          <dt>Member since</dt>
+          <dd>{{ current_user.created_at.strftime('%B %d, %Y') if current_user.created_at else '—' }}</dd>
+          <dt>API Key</dt>
+          <dd>{% if current_user.anthropic_api_key_encrypted %}<span class="badge badge-green">Configured</span>{% else %}<span class="badge badge-gray">Not set</span>{% endif %}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleApiKey() {
+  const input = document.getElementById('api-key-input');
+  const icon = document.getElementById('api-eye-icon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.setAttribute('data-lucide', 'eye-off');
+  } else {
+    input.type = 'password';
+    icon.setAttribute('data-lucide', 'eye');
+  }
+  lucide.createIcons();
+}
+</script>
+{% endblock %}

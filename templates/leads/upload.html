@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Upload Leads — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Upload Leads</h1>
+    <p class="page-subtitle">Import leads from a CSV or Excel file</p>
+  </div>
+  <a href="{{ url_for('leads.pool') }}" class="btn btn-ghost">
+    <i data-lucide="arrow-left"></i> Back to Pool
+  </a>
+</div>
+
+<div class="form-page-layout">
+
+  {% if not headers %}
+  <!-- Step 1: File Upload -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Select File</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('leads.upload') }}" enctype="multipart/form-data" id="upload-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+          <div class="dropzone-icon"><i data-lucide="upload-cloud"></i></div>
+          <div class="dropzone-title">Drop your file here or click to browse</div>
+          <div class="dropzone-hint">Supports CSV and Excel (.xlsx, .xls)</div>
+          <div id="file-name" class="dropzone-file-name" style="display:none;"></div>
+          <input type="file" id="file-input" name="file" accept=".csv,.xlsx,.xls"
+                 style="display:none;" onchange="handleFileSelect(this)">
+        </div>
+
+        <div style="margin-top:1.5rem;">
+          <button type="submit" class="btn btn-primary" id="upload-btn" disabled>
+            <i data-lucide="upload"></i> Parse File & Map Columns
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2 class="card-title">Expected Format</h2></div>
+    <div class="card-body">
+      <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:1rem;">
+        Your file should have a header row. Column names are flexible — you'll map them after upload.
+        At minimum, you need an <strong>email</strong> column.
+      </p>
+      <div class="code-block">
+        first_name, last_name, email, company, title, website, phone, linkedin_url, signal_1
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+  <!-- Step 2: Column Mapping -->
+  <form method="POST" action="{{ url_for('leads.upload') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Map Columns</h2>
+        <p class="card-subtitle">{{ rows|length }} rows detected — map your columns below</p>
+      </div>
+      <div class="card-body">
+        <div class="mapping-grid">
+          {% set field_labels = [
+            ('col_email', 'Email *', True),
+            ('col_first_name', 'First Name', False),
+            ('col_last_name', 'Last Name', False),
+            ('col_company', 'Company', False),
+            ('col_title', 'Job Title', False),
+            ('col_website', 'Website', False),
+            ('col_phone', 'Phone', False),
+            ('col_linkedin', 'LinkedIn URL', False),
+            ('col_signal_1', 'Signal 1 (context)', False),
+            ('col_signal_2', 'Signal 2', False),
+          ] %}
+          {% for field_name, label, required in field_labels %}
+          <div class="mapping-row">
+            <div class="mapping-label">{{ label }}</div>
+            <div class="mapping-arrow"><i data-lucide="arrow-right"></i></div>
+            <select name="{{ field_name }}" class="form-control" {% if required %}required{% endif %}>
+              <option value="">— Skip —</option>
+              {% for col in headers %}
+              <option value="{{ col }}"
+                {% if 'email' in col.lower() and 'email' in field_name %}selected
+                {% elif 'first' in col.lower() and 'first_name' in field_name %}selected
+                {% elif 'last' in col.lower() and 'last_name' in field_name %}selected
+                {% elif 'company' in col.lower() and 'company' in field_name %}selected
+                {% elif 'title' in col.lower() and 'title' in field_name %}selected
+                {% elif 'website' in col.lower() and 'website' in field_name %}selected
+                {% elif 'phone' in col.lower() and 'phone' in field_name %}selected
+                {% elif 'linkedin' in col.lower() and 'linkedin' in field_name %}selected
+                {% elif 'signal' in col.lower() and '1' in col and 'signal_1' in field_name %}selected
+                {% endif %}>
+                {{ col }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    {% if rows %}
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">Preview (first {{ rows|length }} rows)</h2></div>
+      <div class="card-body" style="padding:0; overflow-x:auto;">
+        <table class="table" style="font-size:0.8rem;">
+          <thead>
+            <tr>
+              {% for col in headers %}<th>{{ col }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              {% for col in headers %}<td>{{ row.get(col, '') }}</td>{% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="display:flex; gap:1rem; justify-content:flex-end;">
+      <a href="{{ url_for('leads.upload') }}" class="btn btn-ghost">Start Over</a>
+      <button type="submit" class="btn btn-primary btn-lg">
+        <i data-lucide="users"></i> Import Leads
+      </button>
+    </div>
+  </form>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function handleFileSelect(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('file-name').style.display = 'block';
+  document.getElementById('upload-btn').disabled = false;
+  document.getElementById('dropzone').classList.add('dropzone-has-file');
+}
+
+const dz = document.getElementById('dropzone');
+if (dz) {
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dropzone-drag'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dropzone-drag'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('dropzone-drag');
+    const fi = document.getElementById('file-input');
+    fi.files = e.dataTransfer.files;
+    handleFileSelect(fi);
+  });
+}
+</script>
+{% endblock %}

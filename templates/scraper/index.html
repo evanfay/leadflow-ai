@@ -1,0 +1,458 @@
+{% extends "base.html" %}
+{% block title %}Scraper — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Lead Scraper</h1>
+    <p class="page-subtitle">Find and score businesses with AI — powered by Google Maps &amp; Yellow Pages</p>
+  </div>
+  <div style="display:flex; gap:0.75rem;">
+    <button class="btn btn-ghost" onclick="exportCSV()">
+      <i data-lucide="download"></i> Export CSV
+    </button>
+    <button class="btn btn-ghost" onclick="addToPool()" id="add-pool-btn" style="display:none;">
+      <i data-lucide="users"></i> Add to Lead Pool
+    </button>
+  </div>
+</div>
+
+{% if not has_api_key %}
+<div class="alert alert-warning" style="margin-bottom:1.5rem;">
+  <i data-lucide="alert-triangle"></i>
+  <div>
+    <strong>API key not configured.</strong>
+    AI scoring and email generation will be skipped.
+    <a href="{{ url_for('settings.profile') }}">Add your Anthropic API key</a> to enable them.
+  </div>
+</div>
+{% endif %}
+
+<div class="scraper-layout">
+
+  <!-- Controls Panel -->
+  <div class="card scraper-controls">
+    <div class="card-header"><h2 class="card-title">Search Settings</h2></div>
+    <div class="card-body">
+
+      <div class="form-group">
+        <label class="form-label">Industry / Niche</label>
+        <select id="industry-select" class="form-control" onchange="updateQuery()">
+          <option value="">— Custom query —</option>
+          {% for key, label in all_industries %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Custom Search Query</label>
+        <input type="text" id="query-input" class="form-control"
+               placeholder="e.g. plumbing company, HVAC contractor…">
+        <div class="form-hint">Leave blank to use industry selection above.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input type="text" id="location-input" class="form-control"
+               placeholder="e.g. Philadelphia PA, Chicago IL">
+      </div>
+
+      <!-- Region Presets -->
+      <div class="form-group">
+        <label class="form-label">Or Select a Region</label>
+        <div class="region-selector">
+          {% for region, areas in location_presets.items() %}
+          <div class="region-group">
+            <div class="region-label">{{ region }}</div>
+            {% for area, cities in areas.items() %}
+            <button type="button" class="region-btn" onclick="selectRegion('{{ area }}', {{ cities | tojson }})">
+              {{ area }}
+            </button>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+        <div id="selected-cities" class="selected-cities" style="display:none;"></div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Max Results</label>
+          <select id="max-results" class="form-control">
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+            <option value="30">30</option>
+            <option value="50">50</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Search Radius</label>
+          <select id="radius" class="form-control">
+            <option value="5">5 miles</option>
+            <option value="10" selected>10 miles</option>
+            <option value="25">25 miles</option>
+            <option value="50">50 miles</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" id="run-btn" onclick="runPipeline()">
+        <i data-lucide="play"></i> Run Pipeline
+      </button>
+      <button class="btn btn-danger-ghost btn-full" id="clear-btn" onclick="clearLeads()"
+              style="margin-top:0.5rem; display:none;">
+        <i data-lucide="trash-2"></i> Clear All Leads
+      </button>
+    </div>
+  </div>
+
+  <!-- Results Panel -->
+  <div>
+
+    <!-- Status Bar -->
+    <div id="status-bar" class="status-bar" style="display:none;">
+      <div class="status-bar-inner">
+        <div class="status-spinner" id="status-spinner"></div>
+        <span id="status-msg">Starting…</span>
+        <div class="progress-bar-wrap" id="progress-wrap" style="display:none;">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+          </div>
+          <span id="progress-text" style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar" id="leads-filters" style="display:none;">
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+        <label style="font-size:0.8rem; color:var(--text-muted);">Filter:</label>
+        <select id="filter-status" class="form-control" style="max-width:130px;" onchange="renderLeads()">
+          <option value="">All status</option>
+          <option value="ready">Ready</option>
+          <option value="sent">Sent</option>
+          <option value="low_score">Low score</option>
+          <option value="pending">Pending</option>
+        </select>
+        <select id="filter-tier" class="form-control" style="max-width:140px;" onchange="renderLeads()">
+          <option value="">All email types</option>
+          <option value="personal">Personal only</option>
+          <option value="generic">Generic</option>
+          <option value="none">No email</option>
+        </select>
+        <input type="text" id="filter-q" class="form-control" style="max-width:200px;"
+               placeholder="Search name…" oninput="renderLeads()">
+      </div>
+      <span id="leads-count" style="font-size:0.85rem; color:var(--text-muted); white-space:nowrap;"></span>
+    </div>
+
+    <!-- Leads Table -->
+    <div class="card" id="leads-card" style="display:none;">
+      <div class="card-body" style="padding:0; overflow-x:auto;">
+        <table class="table" id="leads-table">
+          <thead>
+            <tr>
+              <th>Business</th>
+              <th>Score</th>
+              <th>Email</th>
+              <th>Revenue</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="leads-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="empty-leads" class="empty-page-state" style="padding:3rem; display:none;">
+      <div class="empty-icon"><i data-lucide="search"></i></div>
+      <h3>No leads yet</h3>
+      <p>Run the pipeline to scrape and score businesses.</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- Lead Detail Modal -->
+<div class="modal-overlay" id="lead-modal" style="display:none;">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-header">
+      <h3 id="modal-name">Lead Details</h3>
+      <button class="modal-close" onclick="closeLeadModal()"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeLeadModal()">Close</button>
+      <button class="btn btn-primary" id="modal-send-btn">
+        <i data-lucide="send"></i> Send Email
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allLeads = [];
+let selectedCities = [];
+let pollingInterval = null;
+
+// ── Region Selection ──────────────────────────────────────────────────────────
+function selectRegion(area, cities) {
+  selectedCities = cities;
+  document.getElementById('location-input').value = '';
+  const el = document.getElementById('selected-cities');
+  el.style.display = 'block';
+  el.innerHTML = `<strong>${area}:</strong> ${cities.join(', ')}`;
+  document.querySelectorAll('.region-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function updateQuery() {
+  const sel = document.getElementById('industry-select').value;
+  if (sel) document.getElementById('query-input').value = '';
+}
+
+// ── Pipeline ──────────────────────────────────────────────────────────────────
+async function runPipeline() {
+  const query = document.getElementById('query-input').value.trim();
+  const industry = document.getElementById('industry-select').value;
+  const location = document.getElementById('location-input').value.trim();
+  const maxResults = parseInt(document.getElementById('max-results').value);
+  const radius = parseInt(document.getElementById('radius').value);
+
+  if (!query && !industry) { showToast('Select an industry or enter a search query.', 'warning'); return; }
+  if (!location && selectedCities.length === 0) { showToast('Enter a location or select a region.', 'warning'); return; }
+
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('run-btn').innerHTML = '<span class="spinner-sm"></span> Running…';
+  showStatusBar('Initializing pipeline…');
+
+  try {
+    const body = { query, industry, location, cities: selectedCities.length ? selectedCities : null,
+                   max_results: maxResults, radius };
+    const resp = await fetch('/scraper/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error, 'danger'); resetRunBtn(); return; }
+    pollStatus();
+  } catch(e) { showToast('Network error: ' + e.message, 'danger'); resetRunBtn(); }
+}
+
+function pollStatus() {
+  pollingInterval = setInterval(async () => {
+    try {
+      const resp = await fetch('/scraper/status');
+      const s = await resp.json();
+      showStatusBar(s.message);
+      if (s.total > 0) {
+        document.getElementById('progress-wrap').style.display = 'flex';
+        const pct = Math.round((s.progress / s.total) * 100);
+        document.getElementById('progress-fill').style.width = pct + '%';
+        document.getElementById('progress-text').textContent = `${s.progress}/${s.total}`;
+      }
+      if (!s.running) {
+        clearInterval(pollingInterval);
+        resetRunBtn();
+        await loadLeads();
+        if (!s.message.includes('error')) showToast('Pipeline complete!', 'success');
+      }
+    } catch(e) { clearInterval(pollingInterval); resetRunBtn(); }
+  }, 2000);
+}
+
+function showStatusBar(msg) {
+  document.getElementById('status-bar').style.display = 'block';
+  document.getElementById('status-msg').textContent = msg;
+}
+
+function resetRunBtn() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = false;
+  btn.innerHTML = '<i data-lucide="play"></i> Run Pipeline';
+  lucide.createIcons();
+}
+
+// ── Leads ─────────────────────────────────────────────────────────────────────
+async function loadLeads() {
+  const resp = await fetch('/scraper/leads');
+  allLeads = await resp.json();
+  renderLeads();
+  document.getElementById('leads-filters').style.display = allLeads.length ? 'flex' : 'none';
+  document.getElementById('leads-card').style.display = allLeads.length ? 'block' : 'none';
+  document.getElementById('empty-leads').style.display = allLeads.length ? 'none' : 'block';
+  document.getElementById('clear-btn').style.display = allLeads.length ? 'block' : 'none';
+  document.getElementById('add-pool-btn').style.display =
+    allLeads.some(l => l.email_found) ? 'block' : 'none';
+}
+
+function renderLeads() {
+  const q = document.getElementById('filter-q').value.toLowerCase();
+  const status = document.getElementById('filter-status').value;
+  const tier = document.getElementById('filter-tier').value;
+
+  let filtered = allLeads.filter(l => {
+    if (q && !l.name.toLowerCase().includes(q)) return false;
+    if (status && l.status !== status) return false;
+    if (tier && l.email_tier !== tier) return false;
+    return true;
+  });
+
+  document.getElementById('leads-count').textContent = `${filtered.length} leads`;
+
+  const tbody = document.getElementById('leads-tbody');
+  tbody.innerHTML = filtered.map(l => `
+    <tr>
+      <td>
+        <div style="font-weight:600; color:var(--text-heading);">${escHtml(l.name)}</div>
+        <div style="font-size:0.78rem; color:var(--text-muted);">${escHtml(l.address || '')}</div>
+      </td>
+      <td>
+        <div class="score-badge score-${l.score >= 8 ? 'high' : l.score >= 6 ? 'mid' : 'low'}">${l.score}/10</div>
+      </td>
+      <td>
+        ${l.email_found ? `
+          <div style="font-size:0.82rem;">${escHtml(l.email_found)}</div>
+          <span class="badge badge-${l.email_tier === 'personal' ? 'green' : l.email_tier === 'generic' ? 'amber' : 'gray'}" style="font-size:0.65rem;">
+            ${l.email_tier}
+          </span>` : '<span style="color:var(--text-muted); font-size:0.82rem;">No email</span>'}
+      </td>
+      <td style="font-size:0.82rem; color:var(--text-body);">
+        $${(l.revenue_annual || 0).toLocaleString()}/yr
+      </td>
+      <td>
+        <span class="badge badge-${l.status === 'sent' ? 'blue' : l.status === 'ready' ? 'green' : l.status === 'low_score' ? 'gray' : 'amber'}">
+          ${l.status}
+        </span>
+      </td>
+      <td>
+        <div style="display:flex; gap:0.4rem;">
+          <button class="btn btn-xs btn-ghost" onclick="openLeadModal(${l.id})">
+            <i data-lucide="eye"></i>
+          </button>
+          ${l.email_found && l.status !== 'sent' ? `
+          <button class="btn btn-xs btn-primary" onclick="sendLead(${l.id}, this)">
+            <i data-lucide="send"></i>
+          </button>` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  lucide.createIcons();
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Send ──────────────────────────────────────────────────────────────────────
+async function sendLead(id, btn) {
+  if (!confirm('Send email to this lead now?')) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-sm"></span>';
+  try {
+    const resp = await fetch(`/scraper/leads/${id}/send`, { method: 'POST',
+      headers: { 'X-CSRFToken': getCsrf() } });
+    const data = await resp.json();
+    if (data.ok) { showToast('Email sent!', 'success'); await loadLeads(); }
+    else { showToast('Send failed: ' + data.error, 'danger'); btn.disabled = false; lucide.createIcons(); }
+  } catch(e) { showToast('Error: ' + e.message, 'danger'); btn.disabled = false; }
+}
+
+// ── Lead Modal ────────────────────────────────────────────────────────────────
+function openLeadModal(id) {
+  const l = allLeads.find(x => x.id === id);
+  if (!l) return;
+  document.getElementById('modal-name').textContent = l.name;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="detail-list" style="margin-bottom:1rem;">
+      <dt>Address</dt><dd>${escHtml(l.address || '—')}</dd>
+      <dt>Phone</dt><dd>${escHtml(l.phone || '—')}</dd>
+      <dt>Website</dt><dd>${l.website ? `<a href="${escHtml(l.website)}" target="_blank">${escHtml(l.website)}</a>` : '—'}</dd>
+      <dt>Email</dt><dd>${escHtml(l.email_found || 'Not found')}</dd>
+      <dt>Email Type</dt><dd>${l.email_tier || '—'}</dd>
+      <dt>Score</dt><dd>${l.score}/10</dd>
+      <dt>Industry</dt><dd>${l.industry || '—'}</dd>
+      <dt>Revenue Est.</dt><dd>$${(l.revenue_annual||0).toLocaleString()}/yr</dd>
+    </div>
+    ${l.pain_points && l.pain_points.length ? `
+    <div style="margin-bottom:1rem;">
+      <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:0.5rem;">PAIN POINTS</div>
+      <ul style="margin:0; padding-left:1.25rem; color:var(--text-body);">
+        ${l.pain_points.map(p => `<li>${escHtml(p)}</li>`).join('')}
+      </ul>
+    </div>` : ''}
+    ${l.email_subject ? `
+    <div style="margin-bottom:0.75rem;">
+      <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:0.25rem;">SUBJECT</div>
+      <div style="font-weight:600; color:var(--text-heading);">${escHtml(l.email_subject)}</div>
+    </div>
+    <div>
+      <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:0.25rem;">EMAIL BODY</div>
+      <div class="code-block" style="white-space:pre-wrap; font-size:0.82rem; max-height:300px; overflow-y:auto;">${escHtml(l.email_body || '')}</div>
+    </div>` : '<p style="color:var(--text-muted);">No email generated (score below threshold or no API key).</p>'}
+  `;
+  const sendBtn = document.getElementById('modal-send-btn');
+  if (l.email_found && l.status !== 'sent') {
+    sendBtn.style.display = 'flex';
+    sendBtn.onclick = () => { closeLeadModal(); sendLead(id, sendBtn); };
+  } else {
+    sendBtn.style.display = 'none';
+  }
+  document.getElementById('lead-modal').style.display = 'flex';
+}
+
+function closeLeadModal() {
+  document.getElementById('lead-modal').style.display = 'none';
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+async function addToPool() {
+  const resp = await fetch('/scraper/leads/add-to-pool', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+    body: JSON.stringify({}) });
+  const data = await resp.json();
+  if (data.ok) showToast(`Added ${data.added} leads to pool. ${data.skipped} skipped.`, 'success');
+}
+
+function exportCSV() {
+  window.location.href = '/scraper/leads/export/csv';
+}
+
+async function clearLeads() {
+  if (!confirm('Clear all scraped leads? This cannot be undone.')) return;
+  await fetch('/scraper/leads/clear', { method: 'POST', headers: { 'X-CSRFToken': getCsrf() } });
+  allLeads = [];
+  renderLeads();
+  document.getElementById('leads-card').style.display = 'none';
+  document.getElementById('empty-leads').style.display = 'none';
+  document.getElementById('status-bar').style.display = 'none';
+  document.getElementById('clear-btn').style.display = 'none';
+  document.getElementById('add-pool-btn').style.display = 'none';
+  document.getElementById('leads-filters').style.display = 'none';
+  showToast('Leads cleared.', 'info');
+}
+
+function getCsrf() {
+  return document.querySelector('meta[name=csrf-token]')?.content || '';
+}
+
+function showToast(msg, type) {
+  const t = document.createElement('div');
+  t.className = `flash flash-${type}`;
+  t.style.cssText = 'position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999; min-width:280px; animation:fadeInUp 0.3s ease;';
+  t.innerHTML = `<span>${msg}</span><button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;margin-left:auto;"><i data-lucide="x"></i></button>`;
+  document.body.appendChild(t);
+  lucide.createIcons();
+  setTimeout(() => t.remove(), 4000);
+}
+
+// Load existing leads on page load
+loadLeads();
+</script>
+{% endblock %}

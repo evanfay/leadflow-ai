@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% block title %}{{ lead.full_name }} — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ lead.full_name }}</h1>
+    <p class="page-subtitle">{{ lead.title or '' }}{% if lead.title and lead.company %} at {% endif %}{{ lead.company or '' }}</p>
+  </div>
+  <div style="display:flex; gap:0.75rem;">
+    {% if lead.do_not_contact %}
+    <span class="badge badge-red" style="padding:0.5rem 1rem; font-size:0.85rem;">Do Not Contact</span>
+    {% endif %}
+    <a href="{{ url_for('leads.pool') }}" class="btn btn-ghost">
+      <i data-lucide="arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<div class="detail-layout">
+
+  <!-- Left: Lead Info -->
+  <div style="display:flex; flex-direction:column; gap:1.5rem;">
+
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Contact Details</h2>
+        <button class="btn btn-sm btn-ghost" onclick="toggleEdit()">
+          <i data-lucide="pencil"></i> Edit
+        </button>
+      </div>
+      <div class="card-body" id="view-mode">
+        <dl class="detail-list">
+          <dt>Email</dt>
+          <dd><a href="mailto:{{ lead.email }}">{{ lead.email }}</a></dd>
+          <dt>Company</dt>
+          <dd>{{ lead.company or '—' }}</dd>
+          <dt>Title</dt>
+          <dd>{{ lead.title or '—' }}</dd>
+          <dt>Phone</dt>
+          <dd>{{ lead.phone or '—' }}</dd>
+          <dt>Website</dt>
+          <dd>{% if lead.website %}<a href="{{ lead.website }}" target="_blank">{{ lead.website }}</a>{% else %}—{% endif %}</dd>
+          <dt>LinkedIn</dt>
+          <dd>{% if lead.linkedin_url %}<a href="{{ lead.linkedin_url }}" target="_blank">View Profile</a>{% else %}—{% endif %}</dd>
+          <dt>Grade</dt>
+          <dd><span class="badge {% if lead.account_grade == 'A' %}badge-orange{% elif lead.account_grade == 'B' %}badge-blue{% else %}badge-gray{% endif %}">{{ lead.account_grade or '?' }}</span></dd>
+          <dt>Source</dt>
+          <dd>{{ lead.source or '—' }}</dd>
+          <dt>Added</dt>
+          <dd>{{ lead.created_at.strftime('%B %d, %Y') if lead.created_at else '—' }}</dd>
+        </dl>
+      </div>
+      <div class="card-body" id="edit-mode" style="display:none;">
+        <form method="POST" action="{{ url_for('leads.update_lead', lead_id=lead.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">First Name</label>
+              <input type="text" name="first_name" class="form-control" value="{{ lead.first_name }}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Last Name</label>
+              <input type="text" name="last_name" class="form-control" value="{{ lead.last_name }}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" name="email" class="form-control" value="{{ lead.email }}">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Company</label>
+              <input type="text" name="company" class="form-control" value="{{ lead.company }}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Title</label>
+              <input type="text" name="title" class="form-control" value="{{ lead.title }}">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input type="tel" name="phone" class="form-control" value="{{ lead.phone }}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Website</label>
+              <input type="url" name="website" class="form-control" value="{{ lead.website }}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">LinkedIn URL</label>
+            <input type="url" name="linkedin_url" class="form-control" value="{{ lead.linkedin_url }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Account Grade</label>
+            <select name="account_grade" class="form-control" style="max-width:200px;">
+              <option value="A" {% if lead.account_grade == 'A' %}selected{% endif %}>A — High priority</option>
+              <option value="B" {% if lead.account_grade == 'B' %}selected{% endif %}>B — Standard</option>
+              <option value="C" {% if lead.account_grade == 'C' %}selected{% endif %}>C — Lower priority</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+              <input type="checkbox" name="do_not_contact" value="on" {% if lead.do_not_contact %}checked{% endif %}
+                     style="width:16px;height:16px;accent-color:var(--accent-1);">
+              <span>Do Not Contact</span>
+            </label>
+          </div>
+          <div style="display:flex; gap:0.75rem;">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <button type="button" class="btn btn-ghost" onclick="toggleEdit()">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Signals -->
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">Signals & Context</h2></div>
+      <div class="card-body">
+        {% if lead.signal_1 or lead.signal_2 or lead.signal_3 %}
+        <div style="display:flex; flex-direction:column; gap:0.75rem;">
+          {% if lead.signal_1 %}
+          <div class="signal-item">
+            <span class="signal-num">1</span>
+            <span>{{ lead.signal_1 }}</span>
+          </div>
+          {% endif %}
+          {% if lead.signal_2 %}
+          <div class="signal-item">
+            <span class="signal-num">2</span>
+            <span>{{ lead.signal_2 }}</span>
+          </div>
+          {% endif %}
+          {% if lead.signal_3 %}
+          <div class="signal-item">
+            <span class="signal-num">3</span>
+            <span>{{ lead.signal_3 }}</span>
+          </div>
+          {% endif %}
+        </div>
+        {% else %}
+        <p style="color:var(--text-muted);">No signals recorded.</p>
+        {% endif %}
+        {% if lead.notes %}
+        <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--bg-alt);">
+          <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.5rem;">Notes</div>
+          <p style="color:var(--text-body);">{{ lead.notes }}</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="card card-danger">
+      <div class="card-header"><h2 class="card-title">Danger Zone</h2></div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('leads.delete_lead', lead_id=lead.id) }}"
+              onsubmit="return confirm('Permanently delete {{ lead.full_name }}? This cannot be undone.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1rem;">
+            Permanently removes this lead and all associated enrollment history.
+          </p>
+          <button type="submit" class="btn btn-danger">
+            <i data-lucide="trash-2"></i> Delete Lead
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Campaign History + Enroll -->
+  <div style="display:flex; flex-direction:column; gap:1.5rem;">
+
+    <!-- Enroll in Campaign -->
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">Enroll in Campaign</h2></div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('leads.enroll_lead', lead_id=lead.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <div class="form-group">
+            <select name="campaign_id" class="form-control" required>
+              <option value="">— Select campaign —</option>
+              {% for c in campaigns %}
+              <option value="{{ c.id }}">{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="send"></i> Enroll
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Campaign History -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Campaign History</h2>
+      </div>
+      <div class="card-body" style="padding:0;">
+        {% if enrolled %}
+        <table class="table">
+          <thead>
+            <tr><th>Campaign</th><th>Status</th><th>Sends</th><th>Enrolled</th></tr>
+          </thead>
+          <tbody>
+            {% for el in enrolled %}
+            <tr>
+              <td>
+                <a href="{{ url_for('campaigns.detail', campaign_id=el.campaign_id) }}" class="table-link">
+                  {{ el.campaign.name }}
+                </a>
+              </td>
+              <td>
+                <span class="badge
+                  {% if el.status == 'active' %}badge-green
+                  {% elif el.status == 'paused' %}badge-amber
+                  {% elif el.status == 'complete' %}badge-blue
+                  {% elif el.status == 'unsubscribed' %}badge-red
+                  {% else %}badge-gray{% endif %}">
+                  {{ el.status.replace('_',' ').title() }}
+                </span>
+              </td>
+              <td style="color:var(--text-muted);">{{ el.send_logs.count() }}</td>
+              <td style="color:var(--text-muted); font-size:0.85rem;">
+                {{ el.enrolled_at.strftime('%b %d') if el.enrolled_at else '—' }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <p>Not enrolled in any campaigns yet.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleEdit() {
+  const view = document.getElementById('view-mode');
+  const edit = document.getElementById('edit-mode');
+  if (edit.style.display === 'none') {
+    view.style.display = 'none';
+    edit.style.display = 'block';
+  } else {
+    view.style.display = 'block';
+    edit.style.display = 'none';
+  }
+}
+</script>
+{% endblock %}

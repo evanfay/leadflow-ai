@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Settings — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Settings</h1>
+    <p class="page-subtitle">Global configuration for your LeadFlow AI workspace</p>
+  </div>
+</div>
+
+<!-- Settings Nav -->
+<div class="settings-nav">
+  <a href="{{ url_for('settings.index') }}" class="settings-nav-item active">
+    <i data-lucide="sliders"></i> General
+  </a>
+  <a href="{{ url_for('settings.email_accounts') }}" class="settings-nav-item">
+    <i data-lucide="mail"></i> Email Accounts
+  </a>
+  <a href="{{ url_for('settings.templates') }}" class="settings-nav-item">
+    <i data-lucide="file-text"></i> Templates
+  </a>
+  <a href="{{ url_for('settings.profile') }}" class="settings-nav-item">
+    <i data-lucide="user"></i> Profile
+  </a>
+  {% if current_user.is_admin %}
+  <a href="{{ url_for('auth.admin_users') }}" class="settings-nav-item">
+    <i data-lucide="users"></i> Users
+  </a>
+  {% endif %}
+</div>
+
+<div class="settings-layout">
+
+  <div class="card form-section">
+    <div class="card-header"><h2 class="card-title">Send Windows</h2></div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('settings.save_settings') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Send Window Start</label>
+            <select name="send_hour_start" class="form-control">
+              {% for h in range(6, 20) %}
+              <option value="{{ h }}" {% if h == 8 %}selected{% endif %}>
+                {{ '%02d:00'|format(h) }} {% if h < 12 %}AM{% elif h == 12 %}PM{% else %}{{ '%02d:00 PM'|format(h-12) }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Send Window End</label>
+            <select name="send_hour_end" class="form-control">
+              {% for h in range(10, 22) %}
+              <option value="{{ h }}" {% if h == 17 %}selected{% endif %}>
+                {{ '%02d:00'|format(h) }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Send Days</label>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            {% for day_idx, day_name in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
+            <label class="day-toggle">
+              <input type="checkbox" name="send_days" value="{{ day_idx }}"
+                     {% if day_idx < 5 %}checked{% endif %}
+                     style="display:none;">
+              <span class="day-toggle-label">{{ day_name }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Daily Send Limit (global cap)</label>
+          <input type="number" name="daily_limit" class="form-control" value="50" min="1" max="500" style="max-width:150px;">
+          <div class="form-hint">Maximum emails sent per day across all campaigns.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Reply Poll Interval</label>
+          <select name="reply_poll_minutes" class="form-control" style="max-width:200px;">
+            <option value="15">Every 15 minutes</option>
+            <option value="30" selected>Every 30 minutes</option>
+            <option value="60">Every hour</option>
+            <option value="120">Every 2 hours</option>
+          </select>
+          <div class="form-hint">How often to check Gmail inboxes for new replies.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Banned Words</label>
+          <textarea name="banned_words" class="form-control" rows="4"
+                    placeholder="One word or phrase per line. Emails containing these will be flagged before sending.">unsubscribe
+remove me
+stop emailing</textarea>
+          <div class="form-hint">Emails containing these phrases will be flagged in the review queue.</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+          <i data-lucide="save"></i> Save Settings
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2 class="card-title">Quick Links</h2></div>
+    <div class="card-body">
+      <div style="display:flex; flex-direction:column; gap:0.75rem;">
+        <a href="{{ url_for('settings.email_accounts') }}" class="settings-quick-link">
+          <i data-lucide="mail"></i>
+          <div>
+            <div style="font-weight:600;">Email Accounts</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Connect Gmail via SMTP or OAuth</div>
+          </div>
+          <i data-lucide="chevron-right" style="margin-left:auto; color:var(--text-muted);"></i>
+        </a>
+        <a href="{{ url_for('settings.templates') }}" class="settings-quick-link">
+          <i data-lucide="file-text"></i>
+          <div>
+            <div style="font-weight:600;">Email Templates</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Manage your template library</div>
+          </div>
+          <i data-lucide="chevron-right" style="margin-left:auto; color:var(--text-muted);"></i>
+        </a>
+        <a href="{{ url_for('settings.profile') }}" class="settings-quick-link">
+          <i data-lucide="user"></i>
+          <div>
+            <div style="font-weight:600;">Your Profile</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Name, signature, API key</div>
+          </div>
+          <i data-lucide="chevron-right" style="margin-left:auto; color:var(--text-muted);"></i>
+        </a>
+        {% if current_user.is_admin %}
+        <a href="{{ url_for('auth.admin_users') }}" class="settings-quick-link">
+          <i data-lucide="users"></i>
+          <div>
+            <div style="font-weight:600;">User Management</div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Create and manage team accounts</div>
+          </div>
+          <i data-lucide="chevron-right" style="margin-left:auto; color:var(--text-muted);"></i>
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Day toggle buttons
+document.querySelectorAll('.day-toggle input').forEach(cb => {
+  const label = cb.nextElementSibling;
+  function update() {
+    label.classList.toggle('active', cb.checked);
+  }
+  update();
+  cb.addEventListener('change', update);
+});
+</script>
+{% endblock %}

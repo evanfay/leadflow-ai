@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Task Queue — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Task Queue</h1>
+    <p class="page-subtitle">{{ tasks|length }} task{% if tasks|length != 1 %}s{% endif %} pending</p>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar">
+  <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+    <a href="{{ url_for('tasks.queue') }}" class="btn btn-sm {% if not type_filter %}btn-ghost-active{% else %}btn-ghost{% endif %}">
+      All
+    </a>
+    {% for t_type, t_label in [
+      ('write_email', 'Email'),
+      ('linkedin_connect', 'LinkedIn'),
+      ('linkedin_dm', 'LinkedIn DM'),
+      ('voicemail', 'Voicemail'),
+      ('live_call', 'Call'),
+      ('respond_to_reply', 'Reply'),
+    ] %}
+    <a href="{{ url_for('tasks.queue', type=t_type) }}"
+       class="btn btn-sm {% if type_filter == t_type %}btn-ghost-active{% else %}btn-ghost{% endif %}">
+      {{ t_label }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if tasks %}
+<div class="task-cards">
+  {% for task in tasks %}
+  <div class="task-card {% if task.is_overdue %}task-card-overdue{% endif %}">
+    <div class="task-card-left">
+      <div class="task-type-icon
+        {% if 'linkedin' in task.task_type %}icon-linkedin
+        {% elif 'call' in task.task_type or 'voicemail' in task.task_type %}icon-phone
+        {% elif 'reply' in task.task_type %}icon-reply
+        {% else %}icon-email{% endif %}">
+        {% if 'linkedin' in task.task_type %}<i data-lucide="linkedin"></i>
+        {% elif 'call' in task.task_type or 'voicemail' in task.task_type %}<i data-lucide="phone"></i>
+        {% elif 'reply' in task.task_type %}<i data-lucide="message-square"></i>
+        {% else %}<i data-lucide="mail"></i>{% endif %}
+      </div>
+    </div>
+
+    <div class="task-card-body">
+      <div class="task-card-header">
+        <div>
+          <div class="task-card-type">{{ task.task_type.replace('_',' ').title() }}</div>
+          {% if task.enrolled_lead %}
+          <div class="task-card-lead">
+            <a href="{{ url_for('leads.detail', lead_id=task.enrolled_lead.lead_id) }}" class="table-link">
+              {{ task.enrolled_lead.lead.first_name }} {{ task.enrolled_lead.lead.last_name }}
+            </a>
+            <span style="color:var(--text-muted);">at {{ task.enrolled_lead.lead.company or '—' }}</span>
+          </div>
+          {% endif %}
+        </div>
+        <div class="task-card-due {% if task.is_overdue %}text-danger{% else %}text-muted{% endif %}">
+          {% if task.is_overdue %}
+          <i data-lucide="alert-circle" style="width:14px;height:14px;"></i>
+          Overdue
+          {% else %}
+          <i data-lucide="calendar" style="width:14px;height:14px;"></i>
+          {% endif %}
+          {{ task.due_date.strftime('%b %d, %Y') if task.due_date else 'No due date' }}
+        </div>
+      </div>
+
+      {% if task.notes %}
+      <div class="task-card-notes">{{ task.notes }}</div>
+      {% endif %}
+
+      {% if task.enrolled_lead %}
+      <div class="task-card-context">
+        {% set lead = task.enrolled_lead.lead %}
+        {% if lead.signal_1 %}
+        <div class="context-signal">
+          <i data-lucide="zap" style="width:12px;height:12px;color:var(--accent-1);"></i>
+          {{ lead.signal_1[:100] }}
+        </div>
+        {% endif %}
+        {% if task.enrolled_lead.campaign %}
+        <div class="context-campaign">
+          <i data-lucide="send" style="width:12px;height:12px;color:var(--text-muted);"></i>
+          Campaign: {{ task.enrolled_lead.campaign.name }}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="task-card-actions">
+        <form method="POST" action="{{ url_for('tasks.complete_task', task_id=task.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <button type="submit" class="btn btn-sm btn-primary">
+            <i data-lucide="check"></i> Mark Complete
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('tasks.reschedule_task', task_id=task.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <input type="hidden" name="days" value="1">
+          <button type="submit" class="btn btn-sm btn-ghost">
+            <i data-lucide="calendar"></i> +1 Day
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('tasks.skip_task', task_id=task.id) }}" style="display:inline;"
+              onsubmit="return confirm('Skip this task?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <button type="submit" class="btn btn-sm btn-ghost" style="color:var(--text-muted);">
+            <i data-lucide="skip-forward"></i> Skip
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-page-state">
+  <div class="empty-icon"><i data-lucide="check-circle"></i></div>
+  <h2>All caught up!</h2>
+  <p>No pending tasks{% if type_filter %} of type "{{ type_filter.replace('_',' ') }}"{% endif %}.</p>
+  {% if type_filter %}
+  <a href="{{ url_for('tasks.queue') }}" class="btn btn-ghost">View all tasks</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

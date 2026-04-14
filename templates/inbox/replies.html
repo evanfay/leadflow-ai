@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Reply Inbox — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Reply Inbox</h1>
+    <p class="page-subtitle">{{ reply_logs|length }} reply{% if reply_logs|length != 1 %}ies{% endif %}{% if category_filter %} · {{ category_filter.replace('_',' ').title() }}{% endif %}</p>
+  </div>
+</div>
+
+<!-- Category Tabs -->
+<div class="tabs" style="margin-bottom:1.5rem;">
+  <a href="{{ url_for('inbox.replies') }}" class="tab {% if not category_filter %}tab-active{% endif %}">
+    All
+    {% if counts %}
+    <span class="tab-badge">{{ counts.values()|sum }}</span>
+    {% endif %}
+  </a>
+  {% for cat, label, badge_class in [
+    ('positive','Positive','badge-green'),
+    ('not_now','Not Now','badge-amber'),
+    ('wrong_person','Wrong Person','badge-blue'),
+    ('out_of_office','Out of Office','badge-gray'),
+    ('unsubscribe','Unsubscribed','badge-red'),
+  ] %}
+  <a href="{{ url_for('inbox.replies', category=cat) }}" class="tab {% if category_filter == cat %}tab-active{% endif %}">
+    {{ label }}
+    {% if counts.get(cat, 0) > 0 %}
+    <span class="tab-badge {{ badge_class }}">{{ counts[cat] }}</span>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+{% if reply_logs %}
+<div style="display:flex; flex-direction:column; gap:1.25rem;">
+  {% for reply in reply_logs %}
+  {% set el = reply.enrolled_lead %}
+  {% set lead = el.lead %}
+  <div class="reply-card {% if reply.handled %}reply-card-handled{% endif %}">
+    <div class="reply-card-header">
+      <div class="reply-lead-info">
+        <div class="reply-avatar">{{ (lead.first_name or lead.email)[0].upper() }}</div>
+        <div>
+          <div class="reply-lead-name">
+            <a href="{{ url_for('leads.detail', lead_id=lead.id) }}" class="table-link">
+              {{ lead.first_name }} {{ lead.last_name }}
+            </a>
+          </div>
+          <div class="reply-lead-meta">
+            {{ lead.company or '—' }}
+            {% if el.campaign %}
+            <span style="color:var(--text-muted);">· {{ el.campaign.name }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <span class="badge
+          {% if reply.reply_category == 'positive' %}badge-green
+          {% elif reply.reply_category == 'not_now' %}badge-amber
+          {% elif reply.reply_category == 'wrong_person' %}badge-blue
+          {% elif reply.reply_category == 'unsubscribe' %}badge-red
+          {% else %}badge-gray{% endif %}">
+          {{ reply.reply_category.replace('_',' ').title() }}
+        </span>
+        {% if reply.handled %}
+        <span class="badge badge-gray">Handled</span>
+        {% endif %}
+        <span style="font-size:0.78rem; color:var(--text-muted);">
+          {{ reply.received_at.strftime('%b %d, %Y') if reply.received_at else '—' }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Their reply -->
+    <div class="reply-snippet">
+      <div class="reply-snippet-label">Their reply</div>
+      <div class="reply-snippet-text">{{ reply.snippet or 'No content captured.' }}</div>
+    </div>
+
+    <!-- AI suggested reply -->
+    {% if reply.suggested_reply and not reply.handled %}
+    <div class="reply-suggested">
+      <div class="reply-suggested-label">
+        <i data-lucide="sparkles" style="width:13px;height:13px;color:var(--accent-1);"></i>
+        AI suggested response
+      </div>
+      <form method="POST" action="{{ url_for('inbox.send_reply', reply_id=reply.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <input type="hidden" name="subject" value="Re: following up">
+        <textarea name="body" class="form-control reply-edit-area" rows="4">{{ reply.suggested_reply }}</textarea>
+        <div class="reply-actions">
+          <button type="submit" class="btn btn-sm btn-primary">
+            <i data-lucide="send"></i> Edit &amp; Send
+          </button>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+
+    <!-- Action buttons -->
+    {% if not reply.handled %}
+    <div class="reply-footer-actions">
+      <form method="POST" action="{{ url_for('inbox.handle_reply', reply_id=reply.id) }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <button type="submit" class="btn btn-sm btn-ghost">
+          <i data-lucide="check"></i> Mark Handled
+        </button>
+      </form>
+
+      {% if reply.reply_category == 'positive' %}
+      <button class="btn btn-sm btn-ghost" onclick="toggleReenroll({{ reply.id }})">
+        <i data-lucide="refresh-cw"></i> Re-enroll
+      </button>
+      <div id="reenroll-{{ reply.id }}" style="display:none; margin-top:0.75rem;">
+        <form method="POST" action="{{ url_for('inbox.reenroll', reply_id=reply.id) }}" style="display:flex; gap:0.5rem; align-items:center;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <select name="campaign_id" class="form-control" style="max-width:220px;">
+            <option value="">— Select campaign —</option>
+            {% for c in active_campaigns %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-sm btn-primary">Enroll</button>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if reply.followup_due_at %}
+      <span style="font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:0.25rem;">
+        <i data-lucide="clock" style="width:13px;height:13px;"></i>
+        Follow up: {{ reply.followup_due_at.strftime('%b %d, %Y') }}
+      </span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-page-state">
+  <div class="empty-icon"><i data-lucide="inbox"></i></div>
+  <h2>Inbox clear</h2>
+  <p>No replies{% if category_filter %} in the "{{ category_filter.replace('_',' ') }}" category{% endif %}.</p>
+  {% if category_filter %}
+  <a href="{{ url_for('inbox.replies') }}" class="btn btn-ghost">View all replies</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleReenroll(replyId) {
+  const el = document.getElementById('reenroll-' + replyId);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

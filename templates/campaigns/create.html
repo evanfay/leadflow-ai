@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}New Campaign — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">New Campaign</h1>
+    <p class="page-subtitle">Set up a multi-touch outreach sequence</p>
+  </div>
+  <a href="{{ url_for('campaigns.list_campaigns') }}" class="btn btn-ghost">
+    <i data-lucide="arrow-left"></i> Back
+  </a>
+</div>
+
+<div class="form-page-layout">
+  <form method="POST" action="{{ url_for('campaigns.create_campaign') }}" id="campaign-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+    <!-- Basic Info -->
+    <div class="card form-section">
+      <div class="card-header">
+        <h2 class="card-title">
+          <span class="section-num">1</span> Campaign Details
+        </h2>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label" for="name">Campaign Name <span class="required">*</span></label>
+          <input type="text" id="name" name="name" class="form-control"
+                 placeholder="e.g. Q2 HVAC Outreach — Philadelphia" required>
+          <div class="form-hint">Give it a descriptive name so you can track it later.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sequence_id">Sequence</label>
+          <select id="sequence_id" name="sequence_id" class="form-control">
+            <option value="">— No sequence (manual only) —</option>
+            {% for seq in sequences %}
+            <option value="{{ seq.id }}">
+              {{ seq.name }}{% if seq.is_builtin %} (Built-in){% endif %}
+              — {{ seq.step_count }} touches over {{ seq.duration_days }} days
+            </option>
+            {% endfor %}
+          </select>
+          <div class="form-hint">
+            Choose a sequence to define the cadence and channels.
+            <a href="{{ url_for('sequences.list_sequences') }}" target="_blank">Browse sequences</a>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="notes">Notes (optional)</label>
+          <textarea id="notes" name="notes" class="form-control" rows="2"
+                    placeholder="Internal notes about this campaign…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content Mode -->
+    <div class="card form-section">
+      <div class="card-header">
+        <h2 class="card-title">
+          <span class="section-num">2</span> Email Content Mode
+        </h2>
+      </div>
+      <div class="card-body">
+        <div class="radio-group">
+          <label class="radio-card" id="mode-auto-card">
+            <input type="radio" name="content_mode" value="auto" id="mode-auto">
+            <div class="radio-card-inner">
+              <div class="radio-card-icon">
+                <i data-lucide="zap"></i>
+              </div>
+              <div class="radio-card-body">
+                <div class="radio-card-title">Auto-Send</div>
+                <div class="radio-card-desc">
+                  AI generates and sends emails automatically on the schedule. Zero manual work.
+                </div>
+              </div>
+            </div>
+          </label>
+
+          <label class="radio-card selected" id="mode-review-card">
+            <input type="radio" name="content_mode" value="review" id="mode-review" checked>
+            <div class="radio-card-inner">
+              <div class="radio-card-icon">
+                <i data-lucide="eye"></i>
+              </div>
+              <div class="radio-card-body">
+                <div class="radio-card-title">Review Before Send <span class="badge badge-orange" style="font-size:0.65rem;">Recommended</span></div>
+                <div class="radio-card-desc">
+                  AI drafts emails and queues them for your approval. You review, edit, and approve each send.
+                </div>
+              </div>
+            </div>
+          </label>
+
+          <label class="radio-card" id="mode-compose-card">
+            <input type="radio" name="content_mode" value="compose" id="mode-compose">
+            <div class="radio-card-inner">
+              <div class="radio-card-icon">
+                <i data-lucide="clipboard-paste"></i>
+              </div>
+              <div class="radio-card-body">
+                <div class="radio-card-title">Paste Your Own</div>
+                <div class="radio-card-desc">
+                  A blank draft is created for each touch. You paste in your own email (written in ChatGPT, Claude, or anywhere else) and send. No AI key required.
+                </div>
+              </div>
+            </div>
+          </label>
+
+          <label class="radio-card" id="mode-manual-card">
+            <input type="radio" name="content_mode" value="manual" id="mode-manual">
+            <div class="radio-card-inner">
+              <div class="radio-card-icon">
+                <i data-lucide="pencil"></i>
+              </div>
+              <div class="radio-card-body">
+                <div class="radio-card-title">Task-Only (No AI)</div>
+                <div class="radio-card-desc">
+                  A reminder task is created in your queue at each touch. You write and send from your own email client.
+                </div>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <!-- Draft timeout (only for review mode) -->
+        <div id="draft-timeout-section" class="form-group" style="margin-top:1.5rem;">
+          <label class="form-label" for="draft_timeout_hours">Draft Timeout</label>
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <select id="draft_timeout_hours" name="draft_timeout_hours" class="form-control" style="max-width:180px;">
+              <option value="12">12 hours</option>
+              <option value="24" selected>24 hours</option>
+              <option value="48">48 hours</option>
+              <option value="72">72 hours</option>
+            </select>
+            <span style="color:var(--text-muted); font-size:0.875rem;">
+              Auto-skip unreviewed drafts after this time
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- A/B Testing -->
+    <div class="card form-section">
+      <div class="card-header">
+        <h2 class="card-title">
+          <span class="section-num">3</span> A/B Variant Rotation
+        </h2>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Rotation Method</label>
+          <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+              <input type="radio" name="ab_rotation_method" value="round_robin" checked
+                     style="accent-color:var(--accent-1);">
+              <span>Round-robin</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+              <input type="radio" name="ab_rotation_method" value="random"
+                     style="accent-color:var(--accent-1);">
+              <span>Random</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+              <input type="radio" name="ab_rotation_method" value="winner"
+                     style="accent-color:var(--accent-1);">
+              <span>Winner takes all</span>
+            </label>
+          </div>
+          <div class="form-hint">
+            How to distribute A/B template variants across enrolled leads.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex; gap:1rem; justify-content:flex-end;">
+      <a href="{{ url_for('campaigns.list_campaigns') }}" class="btn btn-ghost">Cancel</a>
+      <button type="submit" class="btn btn-primary btn-lg">
+        <i data-lucide="check"></i> Create Campaign
+      </button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Radio card selection highlight
+  document.querySelectorAll('.radio-card input[type=radio]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      document.querySelectorAll('.radio-card').forEach(c => c.classList.remove('selected'));
+      if (radio.checked) radio.closest('.radio-card').classList.add('selected');
+
+      // Toggle draft timeout visibility
+      const showTimeout = document.getElementById('mode-review').checked || document.getElementById('mode-compose').checked;
+      document.getElementById('draft-timeout-section').style.display = showTimeout ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}
