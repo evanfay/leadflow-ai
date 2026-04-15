@@ -46,6 +46,9 @@
     <button type="submit" class="btn btn-primary btn-sm">
       <i data-lucide="send"></i> Enroll in Campaign
     </button>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="openAIPrompt()">
+      <i data-lucide="wand-2"></i> Generate AI Prompt
+    </button>
     <button type="button" class="btn btn-ghost btn-sm" onclick="clearSelection()">Clear</button>
   </div>
 
@@ -148,6 +151,12 @@ function updateBulkBar() {
 function clearSelection() {
   document.querySelectorAll('.lead-checkbox, #select-all').forEach(c => c.checked = false);
   updateBulkBar();
+}
+function openAIPrompt() {
+  const ids = Array.from(document.querySelectorAll('.lead-checkbox:checked')).map(c => c.value);
+  if (!ids.length) { alert('Select at least one lead first.'); return; }
+  const params = ids.map(id => 'lead_ids=' + id).join('&');
+  window.location.href = '{{ url_for("leads.ai_prompt") }}?' + params;
 }
 </script>
 {% endblock %}

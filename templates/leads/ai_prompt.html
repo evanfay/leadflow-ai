@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+{% block title %}AI Prompt Builder — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">AI Prompt Builder</h1>
+    <p class="page-subtitle">Generate emails with any AI — no API key needed</p>
+  </div>
+  <a href="{{ url_for('leads.pool') }}" class="btn btn-ghost">
+    <i data-lucide="arrow-left"></i> Back to Leads
+  </a>
+</div>
+
+<!-- Step indicator -->
+<div class="ai-steps" id="step-indicator">
+  <div class="ai-step active" id="ind-1">
+    <div class="ai-step-num">1</div>
+    <span>Configure</span>
+  </div>
+  <div class="ai-step-line"></div>
+  <div class="ai-step" id="ind-2">
+    <div class="ai-step-num">2</div>
+    <span>Copy Prompt</span>
+  </div>
+  <div class="ai-step-line"></div>
+  <div class="ai-step" id="ind-3">
+    <div class="ai-step-num">3</div>
+    <span>Import Output</span>
+  </div>
+</div>
+
+<!-- ─── STEP 1: Configure ───────────────────────────────────────────── -->
+<div id="step-1">
+  <div style="display:grid; grid-template-columns:1fr 320px; gap:1.5rem; align-items:start;">
+
+    <!-- Left: Campaign + Touch type + Template -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title"><i data-lucide="settings-2" style="color:var(--accent-1);"></i> Configure Your Prompt</h2>
+      </div>
+      <div class="card-body">
+
+        <!-- Campaign -->
+        <div class="form-group">
+          <label class="form-label">Campaign <span style="color:#ef4444;">*</span></label>
+          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.5rem;">
+            Emails will be saved to this campaign's Review Queue. Leads must be enrolled in it.
+          </p>
+          <select id="campaign-select" class="form-control" onchange="updateLeadCount()">
+            <option value="">— Select a campaign —</option>
+            {% for c in campaigns %}
+            <option value="{{ c.id }}" {% if campaign_id|string == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Touch type -->
+        <div class="form-group">
+          <label class="form-label">Email Type</label>
+          <div class="touch-grid" id="touch-grid">
+            {% set touch_opts = [
+              ('observation', 'Opening Touch', 'First email — reference a signal or observation about their business'),
+              ('hypothesis', 'Second Touch', 'Follow-up with a hypothesis about their pain point'),
+              ('proof', 'Third Touch', 'Share a case study or proof point'),
+              ('soft_close', 'Soft Close', 'Light call-to-action before giving up'),
+              ('breakup', 'Breakup Email', 'Final email in the sequence'),
+              ('not_now', 'Not Now Follow-up', 'Re-engage a lead who said "not right now"'),
+            ] %}
+            {% for val, label, desc in touch_opts %}
+            <label class="touch-card {% if loop.first %}touch-card-active{% endif %}" data-val="{{ val }}">
+              <input type="radio" name="touch_type_radio" value="{{ val }}" {% if loop.first %}checked{% endif %}
+                     style="display:none;" onchange="selectTouch('{{ val }}')">
+              <div style="font-weight:600;font-size:0.88rem;">{{ label }}</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.2rem;">{{ desc }}</div>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Template (optional) -->
+        <div class="form-group">
+          <label class="form-label">Template Guidance <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.5rem;">
+            The AI will use this as a style guide — not copied verbatim.
+          </p>
+          <select id="template-select" class="form-control">
+            <option value="">— No template (AI decides style) —</option>
+            {% set current_touch = 'observation' %}
+            {% for t in templates %}
+            <option value="{{ t.id }}" data-touch="{{ t.touch_type }}">
+              {{ t.name }}{% if t.is_builtin %} (built-in){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <button class="btn btn-primary" onclick="generatePrompt()" style="width:100%;">
+          <i data-lucide="wand-2"></i> Generate Prompt
+        </button>
+      </div>
+    </div>
+
+    <!-- Right: Selected leads -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title"><i data-lucide="users" style="color:var(--accent-1);"></i> Selected Leads</h2>
+        <span class="badge badge-orange" id="lead-count-badge">{{ leads|length }}</span>
+      </div>
+      <div class="card-body" style="padding:0; max-height:480px; overflow-y:auto;">
+        <table class="table">
+          <tbody>
+            {% for lead in leads %}
+            <tr>
+              <td style="padding:0.6rem 1rem;">
+                <div style="font-weight:600;font-size:0.85rem;">{{ lead.first_name }} {{ lead.last_name }}</div>
+                <div style="font-size:0.78rem;color:var(--text-muted);">{{ lead.company or lead.email }}</div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer" style="padding:0.75rem 1rem;border-top:1px solid var(--border);font-size:0.82rem;color:var(--text-muted);">
+        <span id="enrolled-note"></span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ─── STEP 2: Copy Prompt ─────────────────────────────────────────── -->
+<div id="step-2" style="display:none;">
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between;">
+      <h2 class="card-title"><i data-lucide="copy" style="color:var(--accent-1);"></i> Copy this prompt into your AI</h2>
+      <div style="display:flex;gap:0.5rem;">
+        <button class="btn btn-ghost btn-sm" onclick="showStep(1)"><i data-lucide="arrow-left"></i> Back</button>
+        <button class="btn btn-primary btn-sm" onclick="copyPrompt()" id="copy-btn">
+          <i data-lucide="copy"></i> Copy Prompt
+        </button>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <div class="tip-row" style="margin-bottom:1.25rem;">
+        <div class="tip-chip"><i data-lucide="sparkles" style="width:14px;height:14px;"></i> ChatGPT</div>
+        <div class="tip-chip"><i data-lucide="sparkles" style="width:14px;height:14px;"></i> Claude.ai</div>
+        <div class="tip-chip"><i data-lucide="sparkles" style="width:14px;height:14px;"></i> Gemini</div>
+        <div class="tip-chip"><i data-lucide="sparkles" style="width:14px;height:14px;"></i> Any AI</div>
+        <span style="color:var(--text-muted);font-size:0.82rem;">— works with all of them</span>
+      </div>
+
+      <div style="position:relative;">
+        <pre id="prompt-display" style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;font-size:0.78rem;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;font-family:monospace;"></pre>
+        <button onclick="copyPrompt()" id="copy-overlay-btn"
+                style="position:absolute;top:0.75rem;right:0.75rem;background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:0.3rem 0.7rem;font-size:0.78rem;cursor:pointer;display:flex;align-items:center;gap:0.3rem;">
+          <i data-lucide="copy" style="width:13px;height:13px;"></i> Copy
+        </button>
+      </div>
+
+      <div class="alert-info" style="margin-top:1.25rem;">
+        <i data-lucide="info" style="width:16px;height:16px;flex-shrink:0;"></i>
+        <div>
+          Paste the prompt into any AI chatbot. Copy the <strong>entire response</strong> — make sure it includes all the
+          <code>---LEAD:---</code> and <code>---END---</code> markers. Then come back here.
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="showStep(3)" style="width:100%;margin-top:1.25rem;">
+        I have my AI output — Import it <i data-lucide="arrow-right"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── STEP 3: Import Output ───────────────────────────────────────── -->
+<div id="step-3" style="display:none;">
+  <form method="POST" action="{{ url_for('leads.ai_prompt_import') }}">
+    <input type="hidden" name="campaign_id" id="import-campaign-id">
+    <input type="hidden" name="touch_type" id="import-touch-type">
+    <input type="hidden" name="lead_ids_json" value="{{ lead_ids|tojson }}">
+
+    <div class="card">
+      <div class="card-header" style="justify-content:space-between;">
+        <h2 class="card-title"><i data-lucide="upload" style="color:var(--accent-1);"></i> Paste AI Output</h2>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="showStep(2)"><i data-lucide="arrow-left"></i> Back</button>
+      </div>
+      <div class="card-body">
+
+        <div class="form-group">
+          <label class="form-label">Paste the full AI response here</label>
+          <textarea name="ai_output" id="ai-output-box" class="form-control"
+                    rows="16" placeholder="Paste the AI's full response here — include all the ---LEAD:--- markers..."
+                    oninput="parsePreview()" style="font-family:monospace;font-size:0.82rem;"></textarea>
+        </div>
+
+        <!-- Live parse preview -->
+        <div id="parse-preview" style="display:none;margin-bottom:1.25rem;">
+          <div class="alert-success" id="parse-ok" style="display:none;">
+            <i data-lucide="check-circle" style="width:16px;height:16px;flex-shrink:0;"></i>
+            <span id="parse-ok-msg"></span>
+          </div>
+          <div class="alert-warning" id="parse-warn" style="display:none;">
+            <i data-lucide="alert-triangle" style="width:16px;height:16px;flex-shrink:0;"></i>
+            <span id="parse-warn-msg"></span>
+          </div>
+        </div>
+
+        <!-- Action choice -->
+        <div class="form-group">
+          <label class="form-label">What should happen after import?</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:0.5rem;">
+            <label class="radio-card radio-card-active" id="action-draft-card">
+              <input type="radio" name="action" value="draft" checked style="display:none;"
+                     onchange="selectAction('draft')">
+              <div class="radio-card-title"><i data-lucide="eye" style="width:15px;height:15px;"></i> Save as Drafts</div>
+              <div class="radio-card-desc">Review each email in the campaign's Review Queue before it sends.</div>
+            </label>
+            <label class="radio-card" id="action-send-card">
+              <input type="radio" name="action" value="send" style="display:none;"
+                     onchange="selectAction('send')">
+              <div class="radio-card-title"><i data-lucide="send" style="width:15px;height:15px;"></i> Send Now</div>
+              <div class="radio-card-desc">Send all emails immediately via your active email account.</div>
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:0.5rem;" id="import-btn">
+          <i data-lucide="upload"></i> Import & Save Drafts
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Hidden lead ID inputs (passed through all steps) -->
+<div id="lead-id-store" style="display:none;">
+  {% for lid in lead_ids %}
+  <span data-lead-id="{{ lid }}"></span>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* Step indicator */
+.ai-steps { display:flex; align-items:center; gap:0; margin-bottom:2rem; }
+.ai-step { display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; font-weight:600; color:var(--text-muted); }
+.ai-step.active { color:var(--accent-1); }
+.ai-step.done { color:#788c5d; }
+.ai-step-num { width:28px; height:28px; border-radius:50%; border:2px solid currentColor; display:flex; align-items:center; justify-content:center; font-size:0.78rem; font-weight:700; flex-shrink:0; }
+.ai-step.active .ai-step-num { background:var(--accent-1); border-color:var(--accent-1); color:#fff; }
+.ai-step.done .ai-step-num { background:#788c5d; border-color:#788c5d; color:#fff; }
+.ai-step-line { flex:1; height:2px; background:var(--border); margin:0 0.75rem; min-width:40px; }
+
+/* Touch type cards */
+.touch-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; }
+.touch-card { border:1.5px solid var(--border); border-radius:var(--radius); padding:0.65rem 0.85rem; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
+.touch-card:hover { border-color:var(--accent-1); }
+.touch-card-active { border-color:var(--accent-1); background:rgba(249,115,22,0.06); }
+
+/* Tip chips */
+.tip-row { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+.tip-chip { display:flex; align-items:center; gap:0.3rem; background:var(--bg-alt); border:1px solid var(--border); border-radius:99px; padding:0.25rem 0.65rem; font-size:0.78rem; font-weight:500; }
+
+/* Alerts */
+.alert-info { display:flex; gap:0.6rem; align-items:flex-start; padding:0.75rem 1rem; border-radius:var(--radius); background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.25); color:#3730a3; font-size:0.85rem; }
+.alert-success { display:flex; gap:0.6rem; align-items:center; padding:0.65rem 1rem; border-radius:var(--radius); background:rgba(120,140,93,0.1); border:1px solid rgba(120,140,93,0.3); color:#3a5c28; font-size:0.85rem; }
+.alert-warning { display:flex; gap:0.6rem; align-items:center; padding:0.65rem 1rem; border-radius:var(--radius); background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); color:#92400e; font-size:0.85rem; }
+</style>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let currentStep = 1;
+let generatedPrompt = '';
+let selectedTouch = '{{ 'observation' }}';
+
+const leadIds = Array.from(document.querySelectorAll('#lead-id-store [data-lead-id]'))
+                     .map(el => el.dataset.leadId);
+
+// ── Step navigation ────────────────────────────────────────────────────────
+function showStep(n) {
+  [1, 2, 3].forEach(i => {
+    document.getElementById('step-' + i).style.display = i === n ? '' : 'none';
+    const ind = document.getElementById('ind-' + i);
+    ind.classList.remove('active', 'done');
+    if (i === n) ind.classList.add('active');
+    else if (i < n) ind.classList.add('done');
+  });
+  currentStep = n;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Touch type selection ───────────────────────────────────────────────────
+function selectTouch(val) {
+  selectedTouch = val;
+  document.querySelectorAll('.touch-card').forEach(card => {
+    card.classList.toggle('touch-card-active', card.dataset.val === val);
+  });
+  // Filter template dropdown to matching touch type
+  filterTemplates(val);
+}
+
+function filterTemplates(touch) {
+  const sel = document.getElementById('template-select');
+  Array.from(sel.options).forEach(opt => {
+    if (!opt.value) return; // keep the blank option
+    opt.style.display = (opt.dataset.touch === touch) ? '' : 'none';
+  });
+  // Reset to blank if current selection doesn't match
+  const cur = sel.options[sel.selectedIndex];
+  if (cur.value && cur.dataset.touch !== touch) sel.value = '';
+}
+
+// ── Generate prompt ────────────────────────────────────────────────────────
+function generatePrompt() {
+  const campaignId = document.getElementById('campaign-select').value;
+  if (!campaignId) {
+    alert('Please select a campaign first.');
+    return;
+  }
+
+  const templateId = document.getElementById('template-select').value;
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2"></i> Generating…';
+
+  const fd = new FormData();
+  leadIds.forEach(id => fd.append('lead_ids', id));
+  fd.append('touch_type', selectedTouch);
+  fd.append('template_id', templateId);
+
+  fetch('{{ url_for("leads.ai_prompt_generate") }}', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { alert(data.error); return; }
+      generatedPrompt = data.prompt;
+      document.getElementById('prompt-display').textContent = generatedPrompt;
+      // Seed import fields
+      document.getElementById('import-campaign-id').value = campaignId;
+      document.getElementById('import-touch-type').value = selectedTouch;
+      if (window.lucide) lucide.createIcons();
+      showStep(2);
+    })
+    .catch(() => alert('Error generating prompt. Please try again.'))
+    .finally(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="wand-2"></i> Generate Prompt';
+      if (window.lucide) lucide.createIcons();
+    });
+}
+
+// ── Copy prompt ────────────────────────────────────────────────────────────
+function copyPrompt() {
+  navigator.clipboard.writeText(generatedPrompt).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.innerHTML = '<i data-lucide="check"></i> Copied!';
+    btn.classList.add('btn-success');
+    setTimeout(() => {
+      btn.innerHTML = '<i data-lucide="copy"></i> Copy Prompt';
+      btn.classList.remove('btn-success');
+      if (window.lucide) lucide.createIcons();
+    }, 2000);
+    if (window.lucide) lucide.createIcons();
+  });
+}
+
+// ── Live parse preview ─────────────────────────────────────────────────────
+function parsePreview() {
+  const text = document.getElementById('ai-output-box').value;
+  const preview = document.getElementById('parse-preview');
+  const ok = document.getElementById('parse-ok');
+  const warn = document.getElementById('parse-warn');
+
+  if (!text.trim()) { preview.style.display = 'none'; return; }
+
+  const matches = [...text.matchAll(/---LEAD:\s*(.*?)\s*---\s*SUBJECT:\s*(.*?)\s*BODY:\s*(.*?)\s*---END---/gis)];
+  preview.style.display = '';
+
+  if (matches.length > 0) {
+    ok.style.display = 'flex';
+    warn.style.display = 'none';
+    document.getElementById('parse-ok-msg').textContent =
+      `✓ Detected ${matches.length} email${matches.length !== 1 ? 's' : ''} ready to import.`;
+  } else {
+    ok.style.display = 'none';
+    warn.style.display = 'flex';
+    document.getElementById('parse-warn-msg').textContent =
+      'No emails detected yet. Make sure the output includes ---LEAD:--- and ---END--- markers.';
+  }
+}
+
+// ── Action selection ───────────────────────────────────────────────────────
+function selectAction(val) {
+  document.getElementById('action-draft-card').classList.toggle('radio-card-active', val === 'draft');
+  document.getElementById('action-send-card').classList.toggle('radio-card-active', val === 'send');
+  const btn = document.getElementById('import-btn');
+  btn.innerHTML = val === 'send'
+    ? '<i data-lucide="send"></i> Import & Send Now'
+    : '<i data-lucide="upload"></i> Import & Save Drafts';
+  if (window.lucide) lucide.createIcons();
+}
+
+// ── Update lead count when campaign changes ────────────────────────────────
+function updateLeadCount() {
+  // Just visual — actual filtering happens server-side on import
+  document.getElementById('enrolled-note').textContent =
+    'Select a campaign — leads not enrolled in it will be skipped on import.';
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  filterTemplates(selectedTouch);
+  {% if campaign_id %}
+  document.getElementById('campaign-select').value = '{{ campaign_id }}';
+  {% endif %}
+});
+</script>
+{% endblock %}
