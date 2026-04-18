@@ -336,6 +336,16 @@ def update_profile():
         else:
             flash('API key cannot be empty.', 'danger')
 
+    elif action == 'scraper':
+        threshold = request.form.get('scraper_email_threshold', '6')
+        try:
+            threshold = max(1, min(10, int(threshold)))
+        except (ValueError, TypeError):
+            threshold = 6
+        current_user.scraper_email_threshold = threshold
+        db.session.commit()
+        flash('Scraper settings saved.', 'success')
+
     elif action == 'password':
         current_pw = request.form.get('current_password', '')
         new_pw = request.form.get('new_password', '')

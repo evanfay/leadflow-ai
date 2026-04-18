@@ -51,6 +51,7 @@ class User(db.Model):
     anthropic_api_key_encrypted = db.Column(db.Text, default='')
     is_admin = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    scraper_email_threshold = db.Column(db.Integer, default=6)
 
     # Relationships
     leads = db.relationship('Lead', backref='user', lazy='dynamic')

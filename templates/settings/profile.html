@@ -74,6 +74,36 @@
       </div>
     </div>
 
+    <!-- Scraper Settings -->
+    <div class="card form-section">
+      <div class="card-header"><h2 class="card-title">Scraper Settings</h2></div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('settings.update_profile') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <input type="hidden" name="action" value="scraper">
+
+          <div class="form-group">
+            <label class="form-label">AI Score Threshold</label>
+            <div style="display:flex; align-items:center; gap:0.75rem;">
+              <input type="number" name="scraper_email_threshold" class="form-control"
+                     style="max-width:80px;"
+                     value="{{ current_user.scraper_email_threshold if current_user.scraper_email_threshold is not none else 6 }}"
+                     min="1" max="10" step="1">
+              <span style="font-size:0.82rem; color:var(--text-muted);">out of 10</span>
+            </div>
+            <div class="form-hint">
+              Leads scoring at or above this threshold are marked "ready" and eligible for email drafts.
+              Default is 6. Lower = more leads qualify; higher = stricter filter.
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">
+            <i data-lucide="save"></i> Save Scraper Settings
+          </button>
+        </form>
+      </div>
+    </div>
+
     <!-- Anthropic API Key -->
     <div class="card form-section">
       <div class="card-header">

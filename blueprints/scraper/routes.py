@@ -516,7 +516,7 @@ def scrape_leads(niche, location, max_results=20, radius_miles=10, user_id=None)
     return deduped[:max_results]
 
 
-def ai_score_and_email(lead, website_text, api_key, variant_key="A", your_name="Evan", your_company="FlowState AI", calendly_link="", email_threshold=6):
+def ai_score_and_email(lead, website_text, api_key, variant_key="A", your_name="Evan", your_company="FlowState AI", calendly_link="", email_threshold=6, generate_emails=True):
     import anthropic as anthropic_lib
     client = anthropic_lib.Anthropic(api_key=api_key)
     industry = detect_industry((lead.get("query", "") + " " + lead.get("name", "") + " " + website_text))
@@ -568,7 +568,7 @@ Respond ONLY with valid JSON, no markdown:
         "email_body": "",
     }
 
-    if score >= email_threshold:
+    if generate_emails and score >= email_threshold:
         variant = EMAIL_VARIANTS.get(variant_key, EMAIL_VARIANTS["A"])
         stat = random.choice(REAL_STATS)
         cal_line = f"\n{calendly_link}" if calendly_link else ""
@@ -612,7 +612,7 @@ Respond ONLY with valid JSON, no markdown:
 
 def run_pipeline(app, user_id, query, max_results, api_key, auto_send, cities=None, location=None, radius=10,
                  your_name="Evan", your_company="FlowState AI", calendly_link="", email_threshold=6,
-                 gmail_address="", gmail_password="", personal_only=False):
+                 gmail_address="", gmail_password="", personal_only=False, generate_emails=True):
     # Set running status before entering app context so polls never see stale "Idle"
     _user_status[user_id] = {"message": "Starting...", "running": True, "progress": 0, "total": 0}
     try:
@@ -700,7 +700,7 @@ def run_pipeline(app, user_id, query, max_results, api_key, auto_send, cities=No
                 set_status(user_id, f"AI scoring (Variant {variant}): {lead['name']}")
 
                 if api_key:
-                    ai = ai_score_and_email(lead, wtext, api_key, variant, your_name, your_company, calendly_link, email_threshold)
+                    ai = ai_score_and_email(lead, wtext, api_key, variant, your_name, your_company, calendly_link, email_threshold, generate_emails)
                 else:
                     industry = detect_industry(lead.get("name", ""))
                     size = detect_size(lead.get("reviews", "0"), wtext)
@@ -793,6 +793,8 @@ def run_route():
         return jsonify({"error": "Please enter a location or select a region"}), 400
 
     your_name = current_user.display_name.split()[0] if current_user.display_name else "Evan"
+    email_threshold = current_user.scraper_email_threshold if current_user.scraper_email_threshold is not None else 6
+    generate_emails = bool(data.get("generate_emails", True))
 
     from flask import current_app
     app = current_app._get_current_object()
@@ -801,7 +803,7 @@ def run_route():
         target=run_pipeline,
         args=(app, current_user.id, query, int(data.get("max_results", 20)), api_key,
               data.get("auto_send", False), cities, location, radius,
-              your_name, "FlowState AI", "", 6, "", "", False),
+              your_name, "FlowState AI", "", email_threshold, "", "", False, generate_emails),
         daemon=True
     ).start()
 

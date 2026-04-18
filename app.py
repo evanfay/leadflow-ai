@@ -86,6 +86,13 @@ def create_app():
     # Create tables + seed on first run
     with app.app_context():
         db.create_all()
+        # Add any new columns that may not exist in older databases
+        try:
+            with db.engine.connect() as conn:
+                conn.execute(db.text('ALTER TABLE users ADD COLUMN scraper_email_threshold INTEGER DEFAULT 6'))
+                conn.commit()
+        except Exception:
+            pass  # Column already exists
         from seed_data import seed_builtin_data
         seed_builtin_data(app, db)
 

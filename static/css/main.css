@@ -884,12 +884,21 @@ select.form-control { cursor: pointer; background-image: url("data:image/svg+xml
 .draft-actions { display: flex; gap: 0.5rem; }
 
 /* ── Scraper ─────────────────────────────────────────────── */
-.scraper-layout { display: grid; grid-template-columns: 300px 1fr; gap: 1.5rem; align-items: start; }
-.scraper-controls { position: sticky; top: 1.5rem; }
+.scraper-layout { display: flex; flex-direction: column; gap: 1.5rem; }
 
-.region-selector { display: flex; flex-direction: column; gap: 0.625rem; max-height: 200px; overflow-y: auto; }
-.region-group { }
-.region-label { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; font-family: var(--font-heading); }
+.scraper-search-row { display: grid; grid-template-columns: 1fr 1fr 1fr 100px 105px auto; gap: 0.75rem; align-items: end; }
+.scraper-search-row .form-group { margin-bottom: 0; }
+
+.scraper-options-row { display: flex; align-items: center; gap: 1.5rem; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.scraper-toggle-label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--text-body); cursor: pointer; user-select: none; }
+.scraper-toggle-label input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent-1); cursor: pointer; }
+.scraper-toggle-note { font-size: 0.75rem; color: var(--text-muted); font-style: italic; }
+.scraper-region-row { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.scraper-region-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; font-family: var(--font-heading); }
+.form-label-hint { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); text-transform: none; letter-spacing: 0; margin-left: 0.35rem; font-family: var(--font-body); white-space: nowrap; }
+.region-selector { display: flex; flex-direction: column; gap: 0.35rem; }
+.region-group { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 0.25rem; }
+.region-label { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-heading); min-width: 110px; flex-shrink: 0; }
 .region-btn {
   display: inline-block; margin: 0.15rem 0.2rem 0.15rem 0;
   padding: 0.2rem 0.6rem;
@@ -978,8 +987,8 @@ select.form-control { cursor: pointer; background-image: url("data:image/svg+xml
   .detail-layout { grid-template-columns: 1fr; }
   .settings-layout { grid-template-columns: 1fr; }
   .overview-layout { grid-template-columns: 1fr; }
-  .scraper-layout { grid-template-columns: 1fr; }
-  .scraper-controls { position: static; }
+  .scraper-search-row { grid-template-columns: 1fr 1fr; }
+  .scraper-search-row .form-group.scraper-field-action { grid-column: span 2; }
 }
 
 @media (max-width: 768px) {
