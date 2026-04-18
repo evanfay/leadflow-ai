@@ -459,6 +459,17 @@ async def _scrape_yellowpages_async(niche, location, max_results=20, user_id=Non
     return results[:max_results]
 
 
+def _run_async(coro):
+    """Run an async coroutine safely from any thread (including Windows background threads)."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+
+
 def scrape_leads(niche, location, max_results=20, radius_miles=10, user_id=None):
     gm_target = max(10, int(max_results * 0.75))
     yp_target = max_results - gm_target
@@ -469,7 +480,7 @@ def scrape_leads(niche, location, max_results=20, radius_miles=10, user_id=None)
             if radius < radius_miles:
                 continue
             try:
-                gm_results = asyncio.run(_scrape_google_maps_async(niche, location, gm_target, radius, user_id))
+                gm_results = _run_async(_scrape_google_maps_async(niche, location, gm_target, radius, user_id))
             except Exception as e:
                 if user_id:
                     set_status(user_id, f"Google Maps error: {e}")
@@ -481,7 +492,7 @@ def scrape_leads(niche, location, max_results=20, radius_miles=10, user_id=None)
     yp_results = []
     if PLAYWRIGHT_OK:
         try:
-            yp_results = asyncio.run(_scrape_yellowpages_async(niche, location, yp_target, user_id))
+            yp_results = _run_async(_scrape_yellowpages_async(niche, location, yp_target, user_id))
         except Exception as e:
             if user_id:
                 set_status(user_id, f"Yellow Pages error: {e}")
@@ -602,11 +613,10 @@ Respond ONLY with valid JSON, no markdown:
 def run_pipeline(app, user_id, query, max_results, api_key, auto_send, cities=None, location=None, radius=10,
                  your_name="Evan", your_company="FlowState AI", calendly_link="", email_threshold=6,
                  gmail_address="", gmail_password="", personal_only=False):
-    with app.app_context():
-        _user_status[user_id] = {"message": "Starting...", "running": True, "progress": 0, "total": 0}
-        leads_out = []
-
-        try:
+    # Set running status before entering app context so polls never see stale "Idle"
+    _user_status[user_id] = {"message": "Starting...", "running": True, "progress": 0, "total": 0}
+    try:
+        with app.app_context():
             niche = query.strip()
             loc = location or (cities[0] if cities else "United States")
 
@@ -638,7 +648,6 @@ def run_pipeline(app, user_id, query, max_results, api_key, auto_send, cities=No
 
             if not all_raw:
                 set_status(user_id, "No new businesses found — try a different niche or location")
-                _user_status[user_id]["running"] = False
                 return
 
             for i, lead in enumerate(all_raw):
@@ -742,10 +751,10 @@ def run_pipeline(app, user_id, query, max_results, api_key, auto_send, cities=No
 
             set_status(user_id, f"Done — {len(all_raw)} leads processed.", progress=len(all_raw))
 
-        except Exception as e:
-            set_status(user_id, f"Pipeline error: {e}")
-        finally:
-            _user_status[user_id]["running"] = False
+    except Exception as e:
+        set_status(user_id, f"Pipeline error: {e}")
+    finally:
+        _user_status[user_id]["running"] = False
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────

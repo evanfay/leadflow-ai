@@ -66,7 +66,7 @@
           <div class="region-group">
             <div class="region-label">{{ region }}</div>
             {% for area, cities in areas.items() %}
-            <button type="button" class="region-btn" onclick="selectRegion('{{ area }}', {{ cities | tojson }})">
+            <button type="button" class="region-btn" onclick="selectRegion(this, '{{ region }}', '{{ area }}')">
               {{ area }}
             </button>
             {% endfor %}
@@ -195,19 +195,21 @@
 
 {% block scripts %}
 <script>
+const LOCATION_PRESETS = {{ location_presets | tojson }};
 let allLeads = [];
 let selectedCities = [];
 let pollingInterval = null;
 
 // ── Region Selection ──────────────────────────────────────────────────────────
-function selectRegion(area, cities) {
+function selectRegion(btn, region, area) {
+  const cities = LOCATION_PRESETS[region][area];
   selectedCities = cities;
   document.getElementById('location-input').value = '';
   const el = document.getElementById('selected-cities');
   el.style.display = 'block';
   el.innerHTML = `<strong>${area}:</strong> ${cities.join(', ')}`;
   document.querySelectorAll('.region-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  btn.classList.add('active');
 }
 
 function updateQuery() {
@@ -258,9 +260,14 @@ function pollStatus() {
       }
       if (!s.running) {
         clearInterval(pollingInterval);
+        document.getElementById('status-spinner').style.display = 'none';
         resetRunBtn();
         await loadLeads();
-        if (!s.message.includes('error')) showToast('Pipeline complete!', 'success');
+        if (s.message.toLowerCase().includes('error') || s.message.toLowerCase().includes('no new')) {
+          showToast(s.message, 'warning');
+        } else {
+          showToast('Pipeline complete!', 'success');
+        }
       }
     } catch(e) { clearInterval(pollingInterval); resetRunBtn(); }
   }, 2000);
@@ -268,6 +275,7 @@ function pollStatus() {
 
 function showStatusBar(msg) {
   document.getElementById('status-bar').style.display = 'block';
+  document.getElementById('status-spinner').style.display = 'block';
   document.getElementById('status-msg').textContent = msg;
 }
 
