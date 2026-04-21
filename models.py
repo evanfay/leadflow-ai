@@ -303,6 +303,8 @@ class EmailAccount(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     email_address = db.Column(db.String(255), nullable=False)
     auth_method = db.Column(db.String(10), default=AuthMethod.SMTP)
+    smtp_host = db.Column(db.String(255), default='smtp.gmail.com')
+    smtp_port = db.Column(db.Integer, default=465)
     smtp_password_encrypted = db.Column(db.Text, default='')
     oauth_token_encrypted = db.Column(db.Text, default='')
     daily_limit = db.Column(db.Integer, default=30)   # 0 = no cap

@@ -90,6 +90,8 @@ def create_app():
         for _sql in [
             'ALTER TABLE users ADD COLUMN scraper_email_threshold INTEGER DEFAULT 6',
             'ALTER TABLE leads ADD COLUMN extra_data TEXT',
+            "ALTER TABLE email_accounts ADD COLUMN smtp_host VARCHAR(255) DEFAULT 'smtp.gmail.com'",
+            'ALTER TABLE email_accounts ADD COLUMN smtp_port INTEGER DEFAULT 465',
         ]:
             try:
                 with db.engine.connect() as conn:

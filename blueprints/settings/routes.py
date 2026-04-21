@@ -51,6 +51,11 @@ def email_accounts():
 def add_email_account():
     email_address = request.form.get('email_address', '').strip()
     smtp_password = request.form.get('smtp_password', '').strip()
+    smtp_host = request.form.get('smtp_host', 'smtp.gmail.com').strip() or 'smtp.gmail.com'
+    try:
+        smtp_port = int(request.form.get('smtp_port', 465))
+    except (ValueError, TypeError):
+        smtp_port = 465
 
     # daily_limit: 0 = no cap
     no_cap = request.form.get('no_cap') or (request.form.get('daily_limit', '30') == '0')
@@ -76,6 +81,8 @@ def add_email_account():
         user_id=current_user.id,
         email_address=email_address,
         auth_method='smtp',
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
         smtp_password_encrypted=encrypt(smtp_password),
         daily_limit=daily_limit,
         warmup_enabled=warmup_enabled,
