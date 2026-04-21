@@ -121,6 +121,31 @@
       </div>
     </div>
 
+    <!-- Optional campaign enrollment -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Enroll in Campaign <span style="font-weight:400; color:var(--text-muted);">(optional)</span></h2>
+          <p class="card-subtitle">Leads are always saved to your pool — assign to a campaign now or later</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="form-group" style="max-width:400px;">
+          <select name="campaign_id" class="form-control" onchange="handleCampaignSelect(this)" id="upload-campaign-select">
+            <option value="">— Save to pool only —</option>
+            {% for c in campaigns | default([]) %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+            <option value="__new__">+ Create new campaign…</option>
+          </select>
+        </div>
+        <div id="new-campaign-wrap" style="display:none; max-width:400px;" class="form-group">
+          <input type="text" name="new_campaign_name" class="form-control"
+                 placeholder="New campaign name…" id="new-campaign-name-input">
+        </div>
+      </div>
+    </div>
+
     <!-- Preview -->
     {% if rows %}
     <div class="card">
@@ -178,6 +203,18 @@ if (dz) {
     fi.files = e.dataTransfer.files;
     handleFileSelect(fi);
   });
+}
+
+function handleCampaignSelect(sel) {
+  const wrap = document.getElementById('new-campaign-wrap');
+  const inp  = document.getElementById('new-campaign-name-input');
+  if (sel.value === '__new__') {
+    wrap.style.display = 'block';
+    inp.required = true;
+  } else {
+    wrap.style.display = 'none';
+    inp.required = false;
+  }
 }
 
 // Custom column builder

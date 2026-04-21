@@ -37,12 +37,17 @@
 
   <div class="bulk-action-bar" id="bulk-bar" style="display:none;">
     <span id="bulk-count" style="color:var(--text-body); font-size:0.875rem;">0 selected</span>
-    <select name="campaign_id" class="form-control" style="max-width:250px;" required>
+    <select name="campaign_id" class="form-control" style="max-width:250px;"
+            onchange="handlePoolCampaignSelect(this)" id="pool-campaign-select">
       <option value="">— Select campaign —</option>
       {% for c in campaigns %}
       <option value="{{ c.id }}">{{ c.name }}</option>
       {% endfor %}
+      <option value="__new__">+ Create new campaign…</option>
     </select>
+    <input type="text" name="new_campaign_name" id="pool-new-campaign-input"
+           class="form-control" placeholder="New campaign name…"
+           style="max-width:200px; display:none;">
     <button type="submit" class="btn btn-primary btn-sm">
       <i data-lucide="send"></i> Enroll in Campaign
     </button>
@@ -165,6 +170,12 @@ function openAIPrompt() {
   if (!ids.length) { alert('Select at least one lead first.'); return; }
   const params = ids.map(id => 'lead_ids=' + id).join('&');
   window.location.href = '{{ url_for("leads.ai_prompt") }}?' + params;
+}
+
+function handlePoolCampaignSelect(sel) {
+  const inp = document.getElementById('pool-new-campaign-input');
+  inp.style.display = sel.value === '__new__' ? 'block' : 'none';
+  inp.required = sel.value === '__new__';
 }
 
 function _submitPost(action, pairs) {
