@@ -594,6 +594,26 @@ def ai_prompt_import():
     return redirect(url_for('campaigns.detail', campaign_id=campaign.id, tab='review'))
 
 
+@leads_bp.route('/bulk-delete', methods=['POST'])
+@login_required
+def bulk_delete():
+    lead_ids = request.form.getlist('lead_ids')
+    if not lead_ids:
+        flash('No leads selected.', 'warning')
+        return redirect(url_for('leads.pool'))
+
+    deleted = 0
+    for lid in lead_ids:
+        lead = Lead.query.filter_by(id=int(lid), user_id=current_user.id).first()
+        if lead:
+            db.session.delete(lead)
+            deleted += 1
+
+    db.session.commit()
+    flash(f'Deleted {deleted} lead{"s" if deleted != 1 else ""}.', 'success')
+    return redirect(url_for('leads.pool'))
+
+
 @leads_bp.route('/bulk-enroll', methods=['POST'])
 @login_required
 def bulk_enroll():

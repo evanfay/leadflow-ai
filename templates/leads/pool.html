@@ -49,6 +49,9 @@
     <button type="button" class="btn btn-ghost btn-sm" onclick="openAIPrompt()">
       <i data-lucide="wand-2"></i> Generate AI Prompt
     </button>
+    <button type="button" class="btn btn-danger btn-sm" onclick="bulkDelete()">
+      <i data-lucide="trash-2"></i> Delete Selected
+    </button>
     <button type="button" class="btn btn-ghost btn-sm" onclick="clearSelection()">Clear</button>
   </div>
 
@@ -104,10 +107,15 @@
             <td style="color:var(--text-muted); font-size:0.85rem;">
               {{ lead.created_at.strftime('%b %d') if lead.created_at else '—' }}
             </td>
-            <td>
+            <td style="display:flex; gap:0.25rem;">
               <a href="{{ url_for('leads.detail', lead_id=lead.id) }}" class="btn btn-xs btn-ghost">
                 <i data-lucide="eye"></i>
               </a>
+              <button type="button" class="btn btn-xs btn-ghost"
+                      onclick="deleteLead({{ lead.id }}, {{ lead.full_name | tojson }})"
+                      style="color:var(--danger, #e53e3e);">
+                <i data-lucide="trash-2"></i>
+              </button>
             </td>
           </tr>
           {% endfor %}
@@ -157,6 +165,35 @@ function openAIPrompt() {
   if (!ids.length) { alert('Select at least one lead first.'); return; }
   const params = ids.map(id => 'lead_ids=' + id).join('&');
   window.location.href = '{{ url_for("leads.ai_prompt") }}?' + params;
+}
+
+function _submitPost(action, pairs) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  const csrf = document.createElement('input');
+  csrf.type = 'hidden'; csrf.name = 'csrf_token';
+  csrf.value = '{{ csrf_token() if csrf_token is defined else "" }}';
+  form.appendChild(csrf);
+  pairs.forEach(([name, value]) => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = name; inp.value = value;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+
+function bulkDelete() {
+  const ids = Array.from(document.querySelectorAll('.lead-checkbox:checked')).map(c => c.value);
+  if (!ids.length) return;
+  if (!confirm(`Permanently delete ${ids.length} lead${ids.length !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+  _submitPost('{{ url_for("leads.bulk_delete") }}', ids.map(id => ['lead_ids', id]));
+}
+
+function deleteLead(id, name) {
+  if (!confirm(`Permanently delete ${name}? This cannot be undone.`)) return;
+  _submitPost(`/leads/${id}/delete`, [['lead_ids', id]]);
 }
 </script>
 {% endblock %}
