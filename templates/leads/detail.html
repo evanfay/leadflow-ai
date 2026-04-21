@@ -152,6 +152,21 @@
       </div>
     </div>
 
+    <!-- Custom Fields -->
+    {% if lead.custom_fields %}
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">Custom Fields</h2></div>
+      <div class="card-body">
+        <dl class="detail-list">
+          {% for key, value in lead.custom_fields.items() %}
+          <dt>{{ key }}</dt>
+          <dd>{{ value or '—' }}</dd>
+          {% endfor %}
+        </dl>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Danger Zone -->
     <div class="card card-danger">
       <div class="card-header"><h2 class="card-title">Danger Zone</h2></div>

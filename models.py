@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import db
@@ -108,6 +109,7 @@ class Lead(db.Model):
     do_not_contact = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     source = db.Column(db.String(100), default='manual')
+    extra_data = db.Column(db.Text, default=None)
 
     # Relationships
     enrolled_leads = db.relationship('EnrolledLead', backref='lead', lazy='dynamic')
@@ -118,6 +120,15 @@ class Lead(db.Model):
     @property
     def full_name(self):
         return f'{self.first_name} {self.last_name}'.strip() or self.email
+
+    @property
+    def custom_fields(self):
+        if self.extra_data:
+            try:
+                return json.loads(self.extra_data)
+            except (ValueError, TypeError):
+                return {}
+        return {}
 
 
 class Sequence(db.Model):

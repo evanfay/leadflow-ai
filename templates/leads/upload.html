@@ -57,27 +57,32 @@
 
   {% else %}
   <!-- Step 2: Column Mapping -->
-  <form method="POST" action="{{ url_for('leads.upload') }}" enctype="multipart/form-data">
+  {% set total = total_rows | default(rows | length) %}
+  <form method="POST" action="{{ url_for('leads.upload') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+    <input type="hidden" name="upload_id" value="{{ upload_id }}">
 
+    <!-- Standard field mapping -->
     <div class="card">
       <div class="card-header">
-        <h2 class="card-title">Map Columns</h2>
-        <p class="card-subtitle">{{ rows|length }} rows detected — map your columns below</p>
+        <div>
+          <h2 class="card-title">Map Columns</h2>
+          <p class="card-subtitle">{{ total }} rows detected — map your CSV columns to lead fields</p>
+        </div>
       </div>
       <div class="card-body">
         <div class="mapping-grid">
           {% set field_labels = [
-            ('col_email', 'Email *', True),
-            ('col_first_name', 'First Name', False),
-            ('col_last_name', 'Last Name', False),
-            ('col_company', 'Company', False),
-            ('col_title', 'Job Title', False),
-            ('col_website', 'Website', False),
-            ('col_phone', 'Phone', False),
-            ('col_linkedin', 'LinkedIn URL', False),
-            ('col_signal_1', 'Signal 1 (context)', False),
-            ('col_signal_2', 'Signal 2', False),
+            ('col_email',      'Email *',            True),
+            ('col_first_name', 'First Name',          False),
+            ('col_last_name',  'Last Name',           False),
+            ('col_company',    'Company',             False),
+            ('col_title',      'Job Title',           False),
+            ('col_website',    'Website',             False),
+            ('col_phone',      'Phone',               False),
+            ('col_linkedin',   'LinkedIn URL',        False),
+            ('col_signal_1',   'Signal 1 (context)',  False),
+            ('col_signal_2',   'Signal 2',            False),
           ] %}
           {% for field_name, label, required in field_labels %}
           <div class="mapping-row">
@@ -86,17 +91,7 @@
             <select name="{{ field_name }}" class="form-control" {% if required %}required{% endif %}>
               <option value="">— Skip —</option>
               {% for col in headers %}
-              <option value="{{ col }}"
-                {% if 'email' in col.lower() and 'email' in field_name %}selected
-                {% elif 'first' in col.lower() and 'first_name' in field_name %}selected
-                {% elif 'last' in col.lower() and 'last_name' in field_name %}selected
-                {% elif 'company' in col.lower() and 'company' in field_name %}selected
-                {% elif 'title' in col.lower() and 'title' in field_name %}selected
-                {% elif 'website' in col.lower() and 'website' in field_name %}selected
-                {% elif 'phone' in col.lower() and 'phone' in field_name %}selected
-                {% elif 'linkedin' in col.lower() and 'linkedin' in field_name %}selected
-                {% elif 'signal' in col.lower() and '1' in col and 'signal_1' in field_name %}selected
-                {% endif %}>
+              <option value="{{ col }}" {% if mapping.get(field_name) == col %}selected{% endif %}>
                 {{ col }}
               </option>
               {% endfor %}
@@ -104,6 +99,25 @@
           </div>
           {% endfor %}
         </div>
+      </div>
+    </div>
+
+    <!-- Custom column mapping -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Custom Columns</h2>
+          <p class="card-subtitle">Map extra CSV columns to custom fields saved on each lead</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="custom-cols-list" style="display:flex; flex-direction:column; gap:0.75rem;"></div>
+        <button type="button" class="btn btn-ghost" style="margin-top:0.75rem;" onclick="addCustomCol()">
+          <i data-lucide="plus"></i> Add Custom Column
+        </button>
+        <p style="margin-top:0.75rem; font-size:0.8rem; color:var(--text-muted);">
+          Custom fields appear on each lead's detail page. Pick a CSV column and give it a label.
+        </p>
       </div>
     </div>
 
@@ -133,7 +147,7 @@
     <div style="display:flex; gap:1rem; justify-content:flex-end;">
       <a href="{{ url_for('leads.upload') }}" class="btn btn-ghost">Start Over</a>
       <button type="submit" class="btn btn-primary btn-lg">
-        <i data-lucide="users"></i> Import Leads
+        <i data-lucide="users"></i> Import {{ total }} Leads
       </button>
     </div>
   </form>
@@ -164,6 +178,57 @@ if (dz) {
     fi.files = e.dataTransfer.files;
     handleFileSelect(fi);
   });
+}
+
+// Custom column builder
+const CSV_COLS = {{ headers | tojson if headers is defined else '[]' }};
+
+function addCustomCol() {
+  const list = document.getElementById('custom-cols-list');
+  if (!list) return;
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex; gap:0.75rem; align-items:center;';
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.name = 'custom_col_name';
+  nameInput.className = 'form-control';
+  nameInput.placeholder = 'Field label (e.g. "Industry")';
+  nameInput.style.flex = '1';
+
+  const arrow = document.createElement('span');
+  arrow.textContent = '→';
+  arrow.style.cssText = 'color:var(--text-muted); flex-shrink:0;';
+
+  const csvSelect = document.createElement('select');
+  csvSelect.name = 'custom_col_csv';
+  csvSelect.className = 'form-control';
+  csvSelect.style.flex = '1';
+
+  const blankOpt = document.createElement('option');
+  blankOpt.value = '';
+  blankOpt.textContent = '— Choose CSV column —';
+  csvSelect.appendChild(blankOpt);
+
+  CSV_COLS.forEach(col => {
+    const opt = document.createElement('option');
+    opt.value = col;
+    opt.textContent = col;
+    csvSelect.appendChild(opt);
+  });
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn btn-ghost btn-sm';
+  removeBtn.textContent = '✕';
+  removeBtn.onclick = () => row.remove();
+
+  row.appendChild(nameInput);
+  row.appendChild(arrow);
+  row.appendChild(csvSelect);
+  row.appendChild(removeBtn);
+  list.appendChild(row);
 }
 </script>
 {% endblock %}

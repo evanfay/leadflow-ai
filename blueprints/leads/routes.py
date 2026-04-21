@@ -1,6 +1,10 @@
 import csv
 import io
+import json
+import os
 import re
+import tempfile
+import uuid
 from datetime import datetime
 from flask import render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import login_required, current_user
@@ -38,106 +42,169 @@ def pool():
                            q=q, status_filter=status_filter)
 
 
+def _upload_tmp_path(user_id, upload_id):
+    safe = ''.join(c for c in upload_id if c.isalnum() or c == '-')
+    return os.path.join(tempfile.gettempdir(), f'leadflow_{user_id}_{safe}.json')
+
+
 @leads_bp.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
     if request.method == 'POST':
-        file = request.files.get('file')
-        if not file or not file.filename:
-            flash('Please select a file.', 'danger')
-            return redirect(url_for('leads.upload'))
+        upload_id = request.form.get('upload_id', '').strip()
 
-        filename = file.filename.lower()
-        rows = []
-
-        try:
-            if filename.endswith('.csv'):
-                content = file.stream.read().decode('utf-8-sig', errors='replace')
-                reader = csv.DictReader(io.StringIO(content))
-                rows = list(reader)
-            elif filename.endswith(('.xlsx', '.xls')):
-                import openpyxl
-                wb = openpyxl.load_workbook(file.stream)
-                ws = wb.active
-                headers = [str(c.value or '').strip() for c in next(ws.iter_rows(max_row=1))]
-                for row in ws.iter_rows(min_row=2, values_only=True):
-                    rows.append(dict(zip(headers, [str(v or '') for v in row])))
-            else:
-                flash('Only CSV and Excel files are supported.', 'danger')
+        if upload_id:
+            # ── Step 2: user submitted mapping form ──
+            tmp_path = _upload_tmp_path(current_user.id, upload_id)
+            try:
+                with open(tmp_path, 'r', encoding='utf-8') as f:
+                    rows = json.load(f)
+                os.unlink(tmp_path)
+            except (FileNotFoundError, OSError, ValueError):
+                flash('Upload session expired. Please upload again.', 'danger')
                 return redirect(url_for('leads.upload'))
-        except Exception as e:
-            flash(f'Error reading file: {e}', 'danger')
-            return redirect(url_for('leads.upload'))
 
-        if not rows:
-            flash('File is empty or could not be read.', 'warning')
-            return redirect(url_for('leads.upload'))
+            mapping = {
+                'email':        request.form.get('col_email', ''),
+                'first_name':   request.form.get('col_first_name', ''),
+                'last_name':    request.form.get('col_last_name', ''),
+                'company':      request.form.get('col_company', ''),
+                'title':        request.form.get('col_title', ''),
+                'website':      request.form.get('col_website', ''),
+                'phone':        request.form.get('col_phone', ''),
+                'linkedin_url': request.form.get('col_linkedin', ''),
+                'signal_1':     request.form.get('col_signal_1', ''),
+                'signal_2':     request.form.get('col_signal_2', ''),
+            }
 
-        # Parse column mapping from form
-        mapping = {
-            'email': request.form.get('col_email', ''),
-            'first_name': request.form.get('col_first_name', ''),
-            'last_name': request.form.get('col_last_name', ''),
-            'company': request.form.get('col_company', ''),
-            'title': request.form.get('col_title', ''),
-            'website': request.form.get('col_website', ''),
-            'phone': request.form.get('col_phone', ''),
-            'linkedin_url': request.form.get('col_linkedin', ''),
-            'signal_1': request.form.get('col_signal_1', ''),
-            'signal_2': request.form.get('col_signal_2', ''),
-        }
+            if not mapping['email']:
+                flash('Email column is required.', 'danger')
+                headers = [k for k in (rows[0].keys() if rows else []) if k]
+                return render_template('leads/upload.html', rows=rows[:5], headers=headers,
+                                       mapping=mapping, upload_id=upload_id,
+                                       total_rows=len(rows))
 
-        if not mapping['email']:
-            # Auto-detect: look for column named 'email'
-            for col in (rows[0].keys() if rows else []):
-                if 'email' in col.lower():
-                    mapping['email'] = col
-                    break
+            # Custom column pairs submitted as parallel lists
+            custom_names = request.form.getlist('custom_col_name')
+            custom_csvs  = request.form.getlist('custom_col_csv')
+            custom_mappings = [
+                (n.strip(), c)
+                for n, c in zip(custom_names, custom_csvs)
+                if n.strip() and c
+            ]
 
-        if not mapping['email']:
-            flash('Could not find email column. Please map columns.', 'danger')
-            headers = list(rows[0].keys()) if rows else []
-            return render_template('leads/upload.html', rows=rows[:5], headers=headers,
-                                   mapping=mapping)
+            imported = duplicates = invalid = 0
+            for row in rows:
+                email = row.get(mapping['email'], '').strip()
+                if not email or '@' not in email:
+                    invalid += 1
+                    continue
 
-        imported = 0
-        skipped = 0
-        for row in rows:
-            email = row.get(mapping['email'], '').strip()
-            if not email or '@' not in email:
-                skipped += 1
-                continue
+                existing = Lead.query.filter_by(
+                    user_id=current_user.id, email=email
+                ).first()
+                if existing:
+                    duplicates += 1
+                    continue
 
-            # Check for duplicate
-            existing = Lead.query.filter_by(user_id=current_user.id, email=email).first()
-            if existing:
-                skipped += 1
-                continue
+                def gv(col_key):
+                    col = mapping.get(col_key, '')
+                    return row.get(col, '').strip() if col else ''
 
-            def gv(col_key):
-                col = mapping.get(col_key, '')
-                return row.get(col, '').strip() if col else ''
+                extra = {
+                    name: row.get(csv_col, '').strip()
+                    for name, csv_col in custom_mappings
+                    if row.get(csv_col, '').strip()
+                }
 
-            lead = Lead(
-                user_id=current_user.id,
-                email=email,
-                first_name=gv('first_name'),
-                last_name=gv('last_name'),
-                company=gv('company'),
-                title=gv('title'),
-                website=gv('website'),
-                phone=gv('phone'),
-                linkedin_url=gv('linkedin_url'),
-                signal_1=gv('signal_1'),
-                signal_2=gv('signal_2'),
-                source='upload',
-            )
-            db.session.add(lead)
-            imported += 1
+                lead = Lead(
+                    user_id=current_user.id,
+                    email=email,
+                    first_name=gv('first_name'),
+                    last_name=gv('last_name'),
+                    company=gv('company'),
+                    title=gv('title'),
+                    website=gv('website'),
+                    phone=gv('phone'),
+                    linkedin_url=gv('linkedin_url'),
+                    signal_1=gv('signal_1'),
+                    signal_2=gv('signal_2'),
+                    extra_data=json.dumps(extra) if extra else None,
+                    source='upload',
+                )
+                db.session.add(lead)
+                imported += 1
 
-        db.session.commit()
-        flash(f'Imported {imported} leads. {skipped} duplicates or invalid rows skipped.', 'success')
-        return redirect(url_for('leads.pool'))
+            db.session.commit()
+
+            parts = [f'Imported {imported} leads.']
+            if duplicates:
+                parts.append(f'{duplicates} already in your pool (skipped).')
+            if invalid:
+                parts.append(f'{invalid} had missing or invalid emails (skipped).')
+            flash(' '.join(parts), 'success')
+            return redirect(url_for('leads.pool'))
+
+        else:
+            # ── Step 1: parse file, save to temp, show mapping form ──
+            file = request.files.get('file')
+            if not file or not file.filename:
+                flash('Please select a file.', 'danger')
+                return redirect(url_for('leads.upload'))
+
+            filename = file.filename.lower()
+            rows = []
+
+            try:
+                if filename.endswith('.csv'):
+                    content = file.stream.read().decode('utf-8-sig', errors='replace')
+                    reader = csv.DictReader(io.StringIO(content))
+                    rows = [dict(r) for r in reader]
+                elif filename.endswith(('.xlsx', '.xls')):
+                    import openpyxl
+                    wb = openpyxl.load_workbook(file.stream)
+                    ws = wb.active
+                    hdrs = [str(c.value or '').strip() for c in next(ws.iter_rows(max_row=1))]
+                    for row in ws.iter_rows(min_row=2, values_only=True):
+                        rows.append(dict(zip(hdrs, [str(v or '') for v in row])))
+                else:
+                    flash('Only CSV and Excel files are supported.', 'danger')
+                    return redirect(url_for('leads.upload'))
+            except Exception as e:
+                flash(f'Error reading file: {e}', 'danger')
+                return redirect(url_for('leads.upload'))
+
+            if not rows:
+                flash('File is empty or could not be read.', 'warning')
+                return redirect(url_for('leads.upload'))
+
+            upload_id = str(uuid.uuid4())
+            tmp_path = _upload_tmp_path(current_user.id, upload_id)
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                json.dump(rows, f, default=str)
+
+            headers = [k for k in rows[0].keys() if k]
+
+            def _auto(kw):
+                return next((h for h in headers if kw in h.lower()), '')
+
+            auto_map = {
+                'col_email':      _auto('email'),
+                'col_first_name': _auto('first'),
+                'col_last_name':  _auto('last'),
+                'col_company':    _auto('company'),
+                'col_title':      _auto('title'),
+                'col_website':    _auto('website'),
+                'col_phone':      _auto('phone'),
+                'col_linkedin':   _auto('linkedin'),
+                'col_signal_1':   next((h for h in headers if 'signal' in h.lower() and '1' in h), ''),
+                'col_signal_2':   next((h for h in headers if 'signal' in h.lower() and '2' in h), ''),
+            }
+
+            return render_template('leads/upload.html',
+                                   rows=rows[:5], headers=headers,
+                                   mapping=auto_map, upload_id=upload_id,
+                                   total_rows=len(rows))
 
     return render_template('leads/upload.html', rows=[], headers=[], mapping={})
 
