@@ -184,27 +184,39 @@
   <!-- Add Account: SMTP -->
   <div class="card">
     <div class="card-header">
-      <h2 class="card-title">Add Gmail via App Password</h2>
+      <h2 class="card-title">Add Gmail or Google Workspace via App Password</h2>
     </div>
     <div class="card-body">
       <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:0.75rem;">
-        Simpler setup. Works immediately after generating an app password.
+        Works with personal Gmail and Google Workspace accounts. No extra configuration needed.
       </p>
-      <div style="display:flex; gap:0.6rem; align-items:flex-start; background:#fffbeb; border:1px solid #f59e0b; border-radius:var(--radius); padding:0.75rem 1rem; margin-bottom:1.25rem;">
+
+      <div style="display:flex; gap:0.6rem; align-items:flex-start; background:#fffbeb; border:1px solid #f59e0b; border-radius:var(--radius); padding:0.75rem 1rem; margin-bottom:0.75rem;">
         <i data-lucide="alert-triangle" style="width:16px;height:16px;color:#d97706;flex-shrink:0;margin-top:2px;"></i>
         <div style="font-size:0.82rem; color:#92400e; line-height:1.6;">
           <strong>Replies won't be tracked with this method.</strong>
-          You can send emails, but LeadFlow won't see when leads reply — sequences won't auto-pause and replies won't appear in your Inbox tab.
+          LeadFlow can send emails but won't see responses — sequences won't auto-pause and replies won't appear in your Inbox tab.
           Use Gmail OAuth above for full reply detection.
         </div>
       </div>
+
+      <div style="display:flex; gap:0.6rem; align-items:flex-start; background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:0.75rem 1rem; margin-bottom:1.25rem; font-size:0.82rem; color:var(--text-body); line-height:1.6;">
+        <i data-lucide="info" style="width:16px;height:16px;color:var(--text-muted);flex-shrink:0;margin-top:2px;"></i>
+        <div>
+          <strong>Why an app password and not your regular password?</strong>
+          Google disabled regular password login for third-party apps in 2022 — your normal password simply won't work via SMTP regardless of what app you use.
+          An app password is a 16-character code Google generates specifically for this purpose and requires 2-Step Verification to be on.<br>
+          <strong>Google Workspace users:</strong> this works the same way, but your admin may need to allow app passwords at the org level first.
+        </div>
+      </div>
+
       <form method="POST" action="{{ url_for('settings.add_email_account') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
 
         <div class="form-group">
-          <label class="form-label">Gmail Address</label>
+          <label class="form-label">Gmail or Workspace Address</label>
           <input type="email" name="email_address" class="form-control"
-                 placeholder="you@gmail.com" required>
+                 placeholder="you@gmail.com or you@yourcompany.com" required>
         </div>
 
         <div class="form-group">
