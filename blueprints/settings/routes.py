@@ -22,11 +22,28 @@ def save_settings():
     return redirect(url_for('settings.index'))
 
 
+def _oauth_secrets_file():
+    """Return a path to Google OAuth secrets JSON, supporting a file or env var."""
+    secrets_file = current_app.config.get('GOOGLE_CLIENT_SECRETS_FILE', 'google_credentials.json')
+    if os.path.exists(secrets_file):
+        return secrets_file
+    creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON', '').strip()
+    if creds_json:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+        tmp.write(creds_json)
+        tmp.close()
+        return tmp.name
+    return None
+
+
 @settings_bp.route('/email-accounts')
 @login_required
 def email_accounts():
     accounts = EmailAccount.query.filter_by(user_id=current_user.id).all()
-    return render_template('settings/email_accounts.html', accounts=accounts)
+    oauth_configured = _oauth_secrets_file() is not None
+    return render_template('settings/email_accounts.html', accounts=accounts,
+                           oauth_configured=oauth_configured)
 
 
 @settings_bp.route('/email-accounts', methods=['POST'])
@@ -77,9 +94,14 @@ def add_email_account():
 @login_required
 def oauth_connect():
     """Start Gmail OAuth flow."""
-    secrets_file = current_app.config.get('GOOGLE_CLIENT_SECRETS_FILE', 'google_credentials.json')
-    if not os.path.exists(secrets_file):
-        flash('Google OAuth credentials file not found. Please configure GOOGLE_CLIENT_SECRETS_FILE.', 'danger')
+    secrets_file = _oauth_secrets_file()
+    if not secrets_file:
+        flash(
+            'Google OAuth is not configured. '
+            'Set GOOGLE_CREDENTIALS_JSON (paste the contents of your credentials.json) '
+            'or GOOGLE_CLIENT_SECRETS_FILE in your Railway environment variables.',
+            'danger'
+        )
         return redirect(url_for('settings.email_accounts'))
 
     try:
@@ -107,7 +129,7 @@ def oauth_connect():
 @login_required
 def oauth_callback():
     """Handle OAuth callback from Google."""
-    secrets_file = current_app.config.get('GOOGLE_CLIENT_SECRETS_FILE', 'google_credentials.json')
+    secrets_file = _oauth_secrets_file()
 
     try:
         from google_auth_oauthlib.flow import Flow

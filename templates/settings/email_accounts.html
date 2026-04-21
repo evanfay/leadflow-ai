@@ -141,19 +141,39 @@
         <i data-lucide="shield-check" style="color:#4285f4; width:18px; height:18px;"></i>
         Connect Gmail (OAuth)
       </h2>
+      <span class="badge {% if oauth_configured %}badge-green{% else %}badge-gray{% endif %}">
+        {% if oauth_configured %}Configured{% else %}Not configured{% endif %}
+      </span>
     </div>
     <div class="card-body">
       <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:0.5rem;">
-        Recommended. No password stored. Enables automatic reply detection.
+        Recommended. No password stored — replies are automatically detected and sequences pause when a lead responds.
       </p>
       <ul style="font-size:0.82rem; color:var(--text-muted); margin:0 0 1.25rem 1rem; line-height:1.8;">
-        <li>Requires a Google Cloud project (one-time setup)</li>
         <li>Sends via Gmail API — high deliverability</li>
         <li>Auto-detects replies and pauses sequences</li>
+        <li>Requires a Google Cloud project with OAuth credentials</li>
       </ul>
+
+      {% if oauth_configured %}
       <a href="{{ url_for('settings.oauth_connect') }}" class="btn btn-primary">
         <i data-lucide="external-link"></i> Connect with Google
       </a>
+      {% else %}
+      <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:1rem; font-size:0.85rem; color:var(--text-body);">
+        <strong>Setup required:</strong> Add your Google OAuth credentials to Railway before connecting.
+        <ol style="margin:0.75rem 0 0 1.1rem; line-height:2;">
+          <li>Go to <strong>Google Cloud Console</strong> → APIs &amp; Services → Credentials</li>
+          <li>Create an OAuth 2.0 Client ID (Web application)</li>
+          <li>Add <code>{{ request.host_url }}settings/email-accounts/oauth/callback</code> as an Authorized Redirect URI</li>
+          <li>Download the credentials JSON file</li>
+          <li>In Railway: add environment variable <code>GOOGLE_CREDENTIALS_JSON</code> and paste the entire JSON contents</li>
+        </ol>
+      </div>
+      <button class="btn btn-primary" disabled title="Configure GOOGLE_CREDENTIALS_JSON in Railway first">
+        <i data-lucide="external-link"></i> Connect with Google
+      </button>
+      {% endif %}
     </div>
   </div>
 
@@ -163,9 +183,17 @@
       <h2 class="card-title">Add Gmail via App Password</h2>
     </div>
     <div class="card-body">
-      <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:0.5rem;">
+      <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:0.75rem;">
         Simpler setup. Works immediately after generating an app password.
       </p>
+      <div style="display:flex; gap:0.6rem; align-items:flex-start; background:#fffbeb; border:1px solid #f59e0b; border-radius:var(--radius); padding:0.75rem 1rem; margin-bottom:1.25rem;">
+        <i data-lucide="alert-triangle" style="width:16px;height:16px;color:#d97706;flex-shrink:0;margin-top:2px;"></i>
+        <div style="font-size:0.82rem; color:#92400e; line-height:1.6;">
+          <strong>Replies won't be tracked with this method.</strong>
+          You can send emails, but LeadFlow won't see when leads reply — sequences won't auto-pause and replies won't appear in your Inbox tab.
+          Use Gmail OAuth above for full reply detection.
+        </div>
+      </div>
       <form method="POST" action="{{ url_for('settings.add_email_account') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
 
