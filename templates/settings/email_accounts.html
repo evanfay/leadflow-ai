@@ -161,16 +161,20 @@
       </a>
       {% else %}
       <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:1rem; font-size:0.85rem; color:var(--text-body);">
-        <strong>Setup required:</strong> Add your Google OAuth credentials to Railway before connecting.
+        <strong>One-time setup required</strong> — Google OAuth needs credentials from Google Cloud Console.
         <ol style="margin:0.75rem 0 0 1.1rem; line-height:2;">
           <li>Go to <strong>Google Cloud Console</strong> → APIs &amp; Services → Credentials</li>
           <li>Create an OAuth 2.0 Client ID (Web application)</li>
           <li>Add <code>{{ request.host_url }}settings/email-accounts/oauth/callback</code> as an Authorized Redirect URI</li>
-          <li>Download the credentials JSON file</li>
-          <li>In Railway: add environment variable <code>GOOGLE_CREDENTIALS_JSON</code> and paste the entire JSON contents</li>
+          <li>Download the credentials JSON and either:
+            <ul style="margin-top:0.25rem; line-height:1.8;">
+              <li>Save it as <code>google_credentials.json</code> in the app root, <strong>or</strong></li>
+              <li>Set the environment variable <code>GOOGLE_CREDENTIALS_JSON</code> to the file's contents</li>
+            </ul>
+          </li>
         </ol>
       </div>
-      <button class="btn btn-primary" disabled title="Configure GOOGLE_CREDENTIALS_JSON in Railway first">
+      <button class="btn btn-primary" disabled title="Configure Google OAuth credentials first">
         <i data-lucide="external-link"></i> Connect with Google
       </button>
       {% endif %}
