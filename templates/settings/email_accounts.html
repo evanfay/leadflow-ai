@@ -144,7 +144,7 @@
   </div>
 
   <!-- Add Account: SMTP + IMAP -->
-  <div class="card">
+  <div class="card" style="grid-column: 1 / -1;">
     <div class="card-header">
       <div>
         <h2 class="card-title">Add Email Account</h2>
@@ -152,169 +152,169 @@
       </div>
     </div>
     <div class="card-body">
-
       <form method="POST" action="{{ url_for('settings.add_email_account') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
 
-        <!-- Provider presets -->
-        <div class="form-group">
-          <label class="form-label">Email Provider</label>
-          <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
-            <button type="button" class="cap-preset-btn active" id="preset-gmail"
-                    onclick="setProviderPreset('gmail', this)">Gmail</button>
-            <button type="button" class="cap-preset-btn" id="preset-workspace"
-                    onclick="setProviderPreset('workspace', this)">Google Workspace</button>
-            <button type="button" class="cap-preset-btn" id="preset-outlook"
-                    onclick="setProviderPreset('outlook', this)">Outlook / Microsoft 365</button>
-            <button type="button" class="cap-preset-btn" id="preset-yahoo"
-                    onclick="setProviderPreset('yahoo', this)">Yahoo Mail</button>
-            <button type="button" class="cap-preset-btn" id="preset-custom"
-                    onclick="setProviderPreset('custom', this)">Other / Custom</button>
+        <!-- Row 1: provider + email -->
+        <div style="display:flex; flex-wrap:wrap; align-items:flex-end; gap:1rem; margin-bottom:1.25rem;">
+          <div>
+            <label class="form-label">Email Provider</label>
+            <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+              <button type="button" class="cap-preset-btn active" id="preset-gmail"
+                      onclick="setProviderPreset('gmail', this)">Gmail</button>
+              <button type="button" class="cap-preset-btn" id="preset-workspace"
+                      onclick="setProviderPreset('workspace', this)">Google Workspace</button>
+              <button type="button" class="cap-preset-btn" id="preset-outlook"
+                      onclick="setProviderPreset('outlook', this)">Outlook / 365</button>
+              <button type="button" class="cap-preset-btn" id="preset-yahoo"
+                      onclick="setProviderPreset('yahoo', this)">Yahoo</button>
+              <button type="button" class="cap-preset-btn" id="preset-custom"
+                      onclick="setProviderPreset('custom', this)">Other</button>
+            </div>
+          </div>
+          <div style="flex:1; min-width:220px;">
+            <label class="form-label">Email Address</label>
+            <input type="email" name="email_address" class="form-control"
+                   placeholder="you@example.com" required>
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Email Address</label>
-          <input type="email" name="email_address" class="form-control"
-                 placeholder="you@example.com" required>
-        </div>
+        <!-- Row 2: SMTP | IMAP side by side -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.25rem;">
 
-        <!-- Outgoing (SMTP) -->
-        <div style="border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:1rem;">
-          <div style="font-weight:600; font-size:0.875rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">
-            <i data-lucide="send" style="width:15px;height:15px;"></i> Outgoing Mail (SMTP)
-          </div>
-          <div style="display:flex; gap:0.75rem; margin-bottom:0.75rem;">
-            <div style="flex:1;">
-              <label class="form-label" style="font-size:0.8rem;">SMTP Host</label>
-              <input type="text" name="smtp_host" id="smtp-host" class="form-control"
-                     value="smtp.gmail.com" placeholder="smtp.example.com" required>
+          <!-- SMTP -->
+          <div style="border:1px solid var(--border); border-radius:var(--radius); padding:1rem;">
+            <div style="font-weight:600; font-size:0.875rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">
+              <i data-lucide="send" style="width:14px;height:14px;"></i> Outgoing Mail (SMTP)
             </div>
-            <div style="width:90px;">
-              <label class="form-label" style="font-size:0.8rem;">Port</label>
-              <input type="number" name="smtp_port" id="smtp-port" class="form-control" value="465">
-            </div>
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label class="form-label" id="smtp-password-label" style="font-size:0.8rem;">App Password</label>
-            <input type="password" name="smtp_password" id="smtp-password" class="form-control"
-                   placeholder="App password or SMTP password" required>
-            <div class="form-hint" id="smtp-password-hint" style="margin-top:0.4rem;">
-              Go to <a href="https://myaccount.google.com/apppasswords" target="_blank">myaccount.google.com/apppasswords</a>
-              → Create → Mail. Requires 2-Step Verification.
-              Your regular Gmail password won't work — Google disabled that for third-party apps in 2022.
-            </div>
-          </div>
-        </div>
-
-        <!-- Incoming (IMAP) — reply detection -->
-        <div style="border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:1rem;">
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
-            <div style="font-weight:600; font-size:0.875rem; display:flex; align-items:center; gap:0.5rem;">
-              <i data-lucide="inbox" style="width:15px;height:15px;"></i> Incoming Mail / Reply Detection (IMAP)
-              <span class="badge badge-green" style="font-size:0.65rem;">Recommended</span>
-            </div>
-            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-size:0.82rem;">
-              <input type="checkbox" id="imap-enabled-toggle" checked
-                     onchange="toggleImapSection(this.checked)"
-                     style="accent-color:var(--accent-1);">
-              Enable
-            </label>
-          </div>
-          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">
-            Allows LeadFlow to detect replies, auto-pause sequences, and populate your Inbox tab.
-            Without this, sending works but you won't see responses.
-          </p>
-          <div id="imap-fields">
-            <div style="display:flex; gap:0.75rem; margin-bottom:0.75rem;">
+            <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
               <div style="flex:1;">
-                <label class="form-label" style="font-size:0.8rem;">IMAP Host</label>
-                <input type="text" name="imap_host" id="imap-host" class="form-control"
-                       value="imap.gmail.com" placeholder="imap.example.com">
+                <label class="form-label" style="font-size:0.78rem;">Host</label>
+                <input type="text" name="smtp_host" id="smtp-host" class="form-control"
+                       value="smtp.gmail.com" placeholder="smtp.example.com" required>
               </div>
-              <div style="width:90px;">
-                <label class="form-label" style="font-size:0.8rem;">Port</label>
-                <input type="number" name="imap_port" id="imap-port" class="form-control" value="993">
+              <div style="width:80px;">
+                <label class="form-label" style="font-size:0.78rem;">Port</label>
+                <input type="number" name="smtp_port" id="smtp-port" class="form-control" value="465">
               </div>
             </div>
-            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.82rem; cursor:pointer; margin-bottom:0.5rem;">
-              <input type="checkbox" name="imap_same_password" id="imap-same-pw" checked
-                     onchange="toggleImapPassword(!this.checked)"
-                     style="accent-color:var(--accent-1);">
-              Same password as SMTP
-            </label>
-            <div id="imap-password-wrap" style="display:none;">
-              <input type="password" name="imap_password" id="imap-password" class="form-control"
-                     placeholder="IMAP password">
+            <div>
+              <label class="form-label" id="smtp-password-label" style="font-size:0.78rem;">App Password</label>
+              <input type="password" name="smtp_password" id="smtp-password" class="form-control"
+                     placeholder="App password or SMTP password" required>
+              <div class="form-hint" id="smtp-password-hint" style="margin-top:0.35rem; font-size:0.75rem;">
+                Go to <a href="https://myaccount.google.com/apppasswords" target="_blank">myaccount.google.com/apppasswords</a>
+                → Create → Mail. Requires 2-Step Verification.
+                Your regular Gmail password won't work — Google disabled that for third-party apps in 2022.
+              </div>
+            </div>
+          </div>
+
+          <!-- IMAP -->
+          <div style="border:1px solid var(--border); border-radius:var(--radius); padding:1rem;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.4rem;">
+              <div style="font-weight:600; font-size:0.875rem; display:flex; align-items:center; gap:0.5rem;">
+                <i data-lucide="inbox" style="width:14px;height:14px;"></i> Reply Detection (IMAP)
+              </div>
+              <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.8rem;">
+                <input type="checkbox" id="imap-enabled-toggle" checked
+                       onchange="toggleImapSection(this.checked)"
+                       style="accent-color:var(--accent-1);">
+                Enable
+              </label>
+            </div>
+            <p style="font-size:0.77rem; color:var(--text-muted); margin-bottom:0.65rem;">
+              Detects replies and auto-pauses sequences. Without this, sending works but you won't see responses.
+            </p>
+            <div id="imap-fields">
+              <div style="display:flex; gap:0.5rem; margin-bottom:0.6rem;">
+                <div style="flex:1;">
+                  <label class="form-label" style="font-size:0.78rem;">Host</label>
+                  <input type="text" name="imap_host" id="imap-host" class="form-control"
+                         value="imap.gmail.com" placeholder="imap.example.com">
+                </div>
+                <div style="width:80px;">
+                  <label class="form-label" style="font-size:0.78rem;">Port</label>
+                  <input type="number" name="imap_port" id="imap-port" class="form-control" value="993">
+                </div>
+              </div>
+              <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; cursor:pointer; margin-bottom:0.4rem;">
+                <input type="checkbox" name="imap_same_password" id="imap-same-pw" checked
+                       onchange="toggleImapPassword(!this.checked)"
+                       style="accent-color:var(--accent-1);">
+                Same password as SMTP
+              </label>
+              <div id="imap-password-wrap" style="display:none;">
+                <input type="password" name="imap_password" id="imap-password" class="form-control"
+                       placeholder="IMAP password">
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Daily cap -->
-        <div class="form-group">
-          <label class="form-label">Daily Send Cap <span style="font-weight:400; color:var(--text-muted); font-size:0.8rem;">— per email address</span></label>
-          <div class="cap-presets" id="smtp-cap-presets">
-            <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 20, this)">20</button>
-            <button type="button" class="cap-preset-btn active" onclick="setCapPreset('smtp-daily-limit', 30, this)">30</button>
-            <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 50, this)">50</button>
-            <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 75, this)">75</button>
-            <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 100, this)">100</button>
-            <span style="color:var(--text-muted); font-size:0.8rem; align-self:center;">or:</span>
-            <input type="number" name="daily_limit" id="smtp-daily-limit" class="form-control cap-custom-input"
-                   value="30" min="1" max="2000" oninput="clearPresetActive('smtp-cap-presets')">
-            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-size:0.875rem; white-space:nowrap; margin-left:0.5rem;">
-              <input type="checkbox" id="smtp-no-cap" onchange="toggleNoCap(this, 'smtp-daily-limit', 'smtp-cap-presets')"
+        <!-- Row 3: daily cap | warmup | submit -->
+        <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
+          <div style="flex:1; min-width:260px;">
+            <label class="form-label">Daily Send Cap <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— per address</span></label>
+            <div class="cap-presets" id="smtp-cap-presets">
+              <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 20, this)">20</button>
+              <button type="button" class="cap-preset-btn active" onclick="setCapPreset('smtp-daily-limit', 30, this)">30</button>
+              <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 50, this)">50</button>
+              <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 75, this)">75</button>
+              <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 100, this)">100</button>
+              <input type="number" name="daily_limit" id="smtp-daily-limit" class="form-control cap-custom-input"
+                     value="30" min="1" max="2000" oninput="clearPresetActive('smtp-cap-presets')">
+              <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.82rem; white-space:nowrap;">
+                <input type="checkbox" id="smtp-no-cap" onchange="toggleNoCap(this, 'smtp-daily-limit', 'smtp-cap-presets')"
+                       style="accent-color:var(--accent-1);">
+                No cap
+              </label>
+            </div>
+            <div class="form-hint" style="margin-top:0.4rem;">5 accounts × 30/day = 150/day total. 30 is safe without warmup.</div>
+          </div>
+
+          <div style="flex:1; min-width:200px;">
+            <label class="form-label" style="display:flex; align-items:center; gap:0.5rem;">
+              <input type="checkbox" name="warmup_enabled" id="smtp-warmup-toggle" value="1"
+                     onchange="document.getElementById('smtp-warmup-options').style.display = this.checked ? '' : 'none'"
                      style="accent-color:var(--accent-1);">
-              No cap
+              Enable email warmup
             </label>
+            <div class="form-hint">Ramps send volume over weeks to build sender reputation.</div>
+            <div id="smtp-warmup-options" style="display:none; margin-top:0.75rem;">
+              <div style="display:flex; flex-direction:column; gap:0.5rem;">
+                <label class="warmup-tier-card">
+                  <input type="radio" name="warmup_tier" value="slow" style="accent-color:var(--accent-1);">
+                  <div>
+                    <div style="font-weight:600; font-size:0.85rem;">Slow — 5 weeks</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">5 → 10 → 20 → 35 → 50/day</div>
+                  </div>
+                </label>
+                <label class="warmup-tier-card">
+                  <input type="radio" name="warmup_tier" value="medium" checked style="accent-color:var(--accent-1);">
+                  <div>
+                    <div style="font-weight:600; font-size:0.85rem;">Medium — 4 weeks <span class="badge badge-orange" style="font-size:0.62rem; vertical-align:middle;">Recommended</span></div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">10 → 25 → 40 → 60/day</div>
+                  </div>
+                </label>
+                <label class="warmup-tier-card">
+                  <input type="radio" name="warmup_tier" value="aggressive" style="accent-color:var(--accent-1);">
+                  <div>
+                    <div style="font-weight:600; font-size:0.85rem;">Aggressive — 3 weeks</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">20 → 40 → 60/day</div>
+                  </div>
+                </label>
+              </div>
+            </div>
           </div>
-          <div class="form-hint" style="margin-top:0.5rem;">
-            Each connected address has its own limit. With 5 accounts at 30/day you can send 150/day total.
-            30/day is safe without warmup; 50–100/day after warmup completes.
-          </div>
-        </div>
 
-        <!-- Warmup -->
-        <div class="form-group">
-          <label class="form-label" style="display:flex; align-items:center; gap:0.5rem;">
-            <input type="checkbox" name="warmup_enabled" id="smtp-warmup-toggle" value="1"
-                   onchange="document.getElementById('smtp-warmup-options').style.display = this.checked ? '' : 'none'"
-                   style="accent-color:var(--accent-1);">
-            Enable email warmup
-          </label>
-          <div class="form-hint">Gradually ramps send volume over several weeks to build sender reputation.</div>
-        </div>
-
-        <div id="smtp-warmup-options" style="display:none; margin-bottom:1.25rem;">
-          <label class="form-label">Warmup Tier</label>
-          <div style="display:flex; flex-direction:column; gap:0.6rem;">
-            <label class="warmup-tier-card">
-              <input type="radio" name="warmup_tier" value="slow" style="accent-color:var(--accent-1);">
-              <div>
-                <div style="font-weight:600; font-size:0.9rem;">Slow — 5 weeks</div>
-                <div style="font-size:0.8rem; color:var(--text-muted);">5 → 10 → 20 → 35 → 50/day — new domains</div>
-              </div>
-            </label>
-            <label class="warmup-tier-card">
-              <input type="radio" name="warmup_tier" value="medium" checked style="accent-color:var(--accent-1);">
-              <div>
-                <div style="font-weight:600; font-size:0.9rem;">Medium — 4 weeks <span class="badge badge-orange" style="font-size:0.65rem; vertical-align:middle;">Recommended</span></div>
-                <div style="font-size:0.8rem; color:var(--text-muted);">10 → 25 → 40 → 60/day</div>
-              </div>
-            </label>
-            <label class="warmup-tier-card">
-              <input type="radio" name="warmup_tier" value="aggressive" style="accent-color:var(--accent-1);">
-              <div>
-                <div style="font-weight:600; font-size:0.9rem;">Aggressive — 3 weeks</div>
-                <div style="font-size:0.8rem; color:var(--text-muted);">20 → 40 → 60/day — established domains only</div>
-              </div>
-            </label>
+          <div style="display:flex; align-items:flex-end; padding-bottom:2px;">
+            <button type="submit" class="btn btn-primary">
+              <i data-lucide="plus"></i> Add Account
+            </button>
           </div>
         </div>
 
-        <button type="submit" class="btn btn-primary">
-          <i data-lucide="plus"></i> Add Account
-        </button>
       </form>
     </div>
   </div>
