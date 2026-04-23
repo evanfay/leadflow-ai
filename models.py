@@ -307,6 +307,9 @@ class EmailAccount(db.Model):
     smtp_port = db.Column(db.Integer, default=465)
     smtp_password_encrypted = db.Column(db.Text, default='')
     oauth_token_encrypted = db.Column(db.Text, default='')
+    imap_host = db.Column(db.String(255), default=None)
+    imap_port = db.Column(db.Integer, default=993)
+    imap_password_encrypted = db.Column(db.Text, default=None)
     daily_limit = db.Column(db.Integer, default=30)   # 0 = no cap
     warmup_enabled = db.Column(db.Boolean, default=False)
     warmup_tier = db.Column(db.String(20), default='medium')  # slow | medium | aggressive

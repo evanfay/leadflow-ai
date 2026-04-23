@@ -38,6 +38,14 @@ def register_jobs(scheduler, app):
         replace_existing=True
     )
     scheduler.add_job(
+        func=poll_imap_replies,
+        trigger='interval',
+        minutes=10,
+        args=[app],
+        id='poll_imap_replies',
+        replace_existing=True
+    )
+    scheduler.add_job(
         func=check_resume_dates,
         trigger='interval',
         hours=1,
@@ -372,6 +380,27 @@ def _process_reply(reply_data, account):
     )
     db.session.add(task)
     db.session.commit()
+
+
+def poll_imap_replies(app):
+    """Poll IMAP inboxes for replies on all accounts with IMAP configured."""
+    with app.app_context():
+        from models import EmailAccount
+
+        accounts = EmailAccount.query.filter(
+            EmailAccount.active == True,
+            EmailAccount.imap_host != None,
+            EmailAccount.imap_password_encrypted != None,
+        ).all()
+
+        for account in accounts:
+            try:
+                from imap_service import check_imap_for_replies
+                replies = check_imap_for_replies(account)
+                for reply_data in replies:
+                    _process_reply(reply_data, account)
+            except Exception as e:
+                print(f'[Scheduler] IMAP poll error for {account.email_address}: {e}')
 
 
 def check_resume_dates(app):

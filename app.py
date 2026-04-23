@@ -92,6 +92,9 @@ def create_app():
             'ALTER TABLE leads ADD COLUMN extra_data TEXT',
             "ALTER TABLE email_accounts ADD COLUMN smtp_host VARCHAR(255) DEFAULT 'smtp.gmail.com'",
             'ALTER TABLE email_accounts ADD COLUMN smtp_port INTEGER DEFAULT 465',
+            'ALTER TABLE email_accounts ADD COLUMN imap_host VARCHAR(255)',
+            'ALTER TABLE email_accounts ADD COLUMN imap_port INTEGER DEFAULT 993',
+            'ALTER TABLE email_accounts ADD COLUMN imap_password_encrypted TEXT',
         ]:
             try:
                 with db.engine.connect() as conn:

@@ -57,6 +57,16 @@ def add_email_account():
     except (ValueError, TypeError):
         smtp_port = 465
 
+    imap_host = request.form.get('imap_host', '').strip() or None
+    try:
+        imap_port = int(request.form.get('imap_port', 993))
+    except (ValueError, TypeError):
+        imap_port = 993
+    imap_password_raw = request.form.get('imap_password', '').strip()
+    # "same as SMTP" checkbox — reuse the smtp password for IMAP
+    if request.form.get('imap_same_password') and smtp_password:
+        imap_password_raw = smtp_password
+
     # daily_limit: 0 = no cap
     no_cap = request.form.get('no_cap') or (request.form.get('daily_limit', '30') == '0')
     daily_limit = 0 if no_cap else max(1, int(request.form.get('daily_limit', 30) or 30))
@@ -84,6 +94,9 @@ def add_email_account():
         smtp_host=smtp_host,
         smtp_port=smtp_port,
         smtp_password_encrypted=encrypt(smtp_password),
+        imap_host=imap_host,
+        imap_port=imap_port if imap_host else None,
+        imap_password_encrypted=encrypt(imap_password_raw) if (imap_host and imap_password_raw) else None,
         daily_limit=daily_limit,
         warmup_enabled=warmup_enabled,
         warmup_tier=warmup_tier,
@@ -218,7 +231,6 @@ def update_email_account(account_id):
         daily_limit = int(daily_limit_raw)
     except (ValueError, TypeError):
         daily_limit = 30
-    # No-cap: form sends 0 or the no_cap checkbox
     account.daily_limit = max(0, daily_limit)
 
     # Warmup
@@ -229,6 +241,18 @@ def update_email_account(account_id):
         account.warmup_week = max(1, int(request.form.get('warmup_week', 1)))
     except (ValueError, TypeError):
         account.warmup_week = 1
+
+    # IMAP reply detection (optional update)
+    new_imap_host = request.form.get('imap_host', '').strip() or None
+    if new_imap_host:
+        account.imap_host = new_imap_host
+        try:
+            account.imap_port = int(request.form.get('imap_port', 993))
+        except (ValueError, TypeError):
+            account.imap_port = 993
+        imap_pw = request.form.get('imap_password', '').strip()
+        if imap_pw:
+            account.imap_password_encrypted = encrypt(imap_pw)
 
     db.session.commit()
     flash(f'Settings updated for {account.email_address}.', 'success')
