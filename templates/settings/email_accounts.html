@@ -143,53 +143,6 @@
     {% endif %}
   </div>
 
-  <!-- Add Account: OAuth -->
-  <div class="card">
-    <div class="card-header">
-      <h2 class="card-title">
-        <i data-lucide="shield-check" style="color:#4285f4; width:18px; height:18px;"></i>
-        Connect Gmail (OAuth)
-      </h2>
-      <span class="badge {% if oauth_configured %}badge-green{% else %}badge-gray{% endif %}">
-        {% if oauth_configured %}Configured{% else %}Not configured{% endif %}
-      </span>
-    </div>
-    <div class="card-body">
-      <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:0.5rem;">
-        Recommended. No password stored — replies are automatically detected and sequences pause when a lead responds.
-      </p>
-      <ul style="font-size:0.82rem; color:var(--text-muted); margin:0 0 1.25rem 1rem; line-height:1.8;">
-        <li>Sends via Gmail API — high deliverability</li>
-        <li>Auto-detects replies and pauses sequences</li>
-        <li>Requires a Google Cloud project with OAuth credentials</li>
-      </ul>
-
-      {% if oauth_configured %}
-      <a href="{{ url_for('settings.oauth_connect') }}" class="btn btn-primary">
-        <i data-lucide="external-link"></i> Connect with Google
-      </a>
-      {% else %}
-      <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-bottom:1rem; font-size:0.85rem; color:var(--text-body);">
-        <strong>One-time setup required</strong> — Google OAuth needs credentials from Google Cloud Console.
-        <ol style="margin:0.75rem 0 0 1.1rem; line-height:2;">
-          <li>Go to <strong>Google Cloud Console</strong> → APIs &amp; Services → Credentials</li>
-          <li>Create an OAuth 2.0 Client ID (Web application)</li>
-          <li>Add <code>{{ request.host_url }}settings/email-accounts/oauth/callback</code> as an Authorized Redirect URI</li>
-          <li>Download the credentials JSON and either:
-            <ul style="margin-top:0.25rem; line-height:1.8;">
-              <li>Save it as <code>google_credentials.json</code> in the app root, <strong>or</strong></li>
-              <li>Set the environment variable <code>GOOGLE_CREDENTIALS_JSON</code> to the file's contents</li>
-            </ul>
-          </li>
-        </ol>
-      </div>
-      <button class="btn btn-primary" disabled title="Configure Google OAuth credentials first">
-        <i data-lucide="external-link"></i> Connect with Google
-      </button>
-      {% endif %}
-    </div>
-  </div>
-
   <!-- Add Account: SMTP + IMAP -->
   <div class="card">
     <div class="card-header">
@@ -363,6 +316,46 @@
           <i data-lucide="plus"></i> Add Account
         </button>
       </form>
+    </div>
+  </div>
+
+  <!-- Gmail OAuth — alternative option -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-header">
+      <div style="display:flex; align-items:center; gap:0.6rem;">
+        <i data-lucide="shield-check" style="color:#4285f4; width:17px; height:17px;"></i>
+        <h2 class="card-title">Connect Gmail via OAuth <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">— alternative for Gmail users</span></h2>
+      </div>
+      <span class="badge {% if oauth_configured %}badge-green{% else %}badge-gray{% endif %}">
+        {% if oauth_configured %}Configured{% else %}Not configured{% endif %}
+      </span>
+    </div>
+    <div class="card-body">
+      <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:0.75rem;">
+        Skips the app password requirement for Gmail by using the Gmail API directly.
+        Sends and detects replies without storing a password — but requires a one-time Google Cloud setup
+        and only works with Gmail / Google Workspace accounts.
+      </p>
+      {% if oauth_configured %}
+      <a href="{{ url_for('settings.oauth_connect') }}" class="btn btn-ghost">
+        <i data-lucide="external-link"></i> Connect with Google
+      </a>
+      {% else %}
+      <details style="margin-bottom:0.75rem;">
+        <summary style="cursor:pointer; font-size:0.85rem; font-weight:600; color:var(--text-body);">Setup instructions</summary>
+        <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-top:0.5rem; font-size:0.83rem; color:var(--text-body);">
+          <ol style="margin:0 0 0 1.1rem; line-height:2.1;">
+            <li>Go to <strong>Google Cloud Console</strong> → APIs &amp; Services → Credentials</li>
+            <li>Create an OAuth 2.0 Client ID (Web application)</li>
+            <li>Add <code>{{ request.host_url }}settings/email-accounts/oauth/callback</code> as an Authorized Redirect URI</li>
+            <li>Download the credentials JSON and either save it as <code>google_credentials.json</code> in the app root, or set the <code>GOOGLE_CREDENTIALS_JSON</code> environment variable to its contents</li>
+          </ol>
+        </div>
+      </details>
+      <button class="btn btn-ghost" disabled title="Configure Google OAuth credentials first">
+        <i data-lucide="external-link"></i> Connect with Google
+      </button>
+      {% endif %}
     </div>
   </div>
 
