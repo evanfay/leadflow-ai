@@ -163,7 +163,12 @@ def oauth_callback():
             redirect_uri=url_for('settings.oauth_callback', _external=True),
             state=session.get('oauth_state')
         )
-        flow.fetch_token(authorization_response=request.url)
+        # Force https:// in the callback URL — Railway terminates SSL at the
+        # proxy so request.url may still carry http:// even after ProxyFix.
+        auth_response = request.url
+        if auth_response.startswith('http://'):
+            auth_response = 'https://' + auth_response[len('http://'):]
+        flow.fetch_token(authorization_response=auth_response)
         creds = flow.credentials
 
         # Get user's Gmail address
@@ -201,7 +206,9 @@ def oauth_callback():
         db.session.commit()
         flash(f'Gmail account {email_address} connected!', 'success')
     except Exception as e:
-        flash(f'OAuth callback error: {e}', 'danger')
+        import traceback
+        print(f'[OAuth] Callback error: {traceback.format_exc()}')
+        flash(f'OAuth error: {e}', 'danger')
 
     return redirect(url_for('settings.email_accounts'))
 
