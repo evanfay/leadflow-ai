@@ -125,7 +125,10 @@ def oauth_connect():
         return redirect(url_for('settings.email_accounts'))
 
     try:
+        import os, hashlib, base64
         from google_auth_oauthlib.flow import Flow
+        from flask import session
+
         flow = Flow.from_client_secrets_file(
             secrets_file,
             scopes=[
@@ -134,11 +137,22 @@ def oauth_connect():
             ],
             redirect_uri=url_for('settings.oauth_callback', _external=True)
         )
+
+        # Generate PKCE code verifier + challenge so Google's token exchange works
+        code_verifier = base64.urlsafe_b64encode(os.urandom(40)).rstrip(b'=').decode()
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).rstrip(b'=').decode()
+
         auth_url, state = flow.authorization_url(
-            access_type='offline', include_granted_scopes='true', prompt='consent'
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent',
+            code_challenge=code_challenge,
+            code_challenge_method='S256',
         )
-        from flask import session
         session['oauth_state'] = state
+        session['oauth_code_verifier'] = code_verifier
         return redirect(auth_url)
     except Exception as e:
         flash(f'OAuth error: {e}', 'danger')
@@ -168,7 +182,10 @@ def oauth_callback():
         auth_response = request.url
         if auth_response.startswith('http://'):
             auth_response = 'https://' + auth_response[len('http://'):]
-        flow.fetch_token(authorization_response=auth_response)
+
+        # Pass the PKCE code verifier generated during oauth_connect
+        code_verifier = session.get('oauth_code_verifier', '')
+        flow.fetch_token(authorization_response=auth_response, code_verifier=code_verifier)
         creds = flow.credentials
 
         # Get user's Gmail address
