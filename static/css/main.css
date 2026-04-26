@@ -446,11 +446,14 @@ select.form-control { cursor: pointer; background-image: url("data:image/svg+xml
 }
 .table td {
   padding: 0.75rem 1rem;
+  vertical-align: top;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
   color: var(--text-body);
 }
 .table tr:last-child td { border-bottom: none; }
+.table-compact th { padding: 0.4rem 0.75rem; }
+.table-compact td { padding: 0.4rem 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .table-hover tr:hover td { background: var(--bg); }
 .table-link { color: var(--text-heading); font-weight: 600; text-decoration: none; }
 .table-link:hover { color: var(--accent-1); opacity: 1; }
