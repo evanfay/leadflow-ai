@@ -324,38 +324,97 @@
     <div class="card-header">
       <div style="display:flex; align-items:center; gap:0.6rem;">
         <i data-lucide="shield-check" style="color:#4285f4; width:17px; height:17px;"></i>
-        <h2 class="card-title">Connect Gmail via OAuth <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">— alternative for Gmail users</span></h2>
+        <h2 class="card-title">Connect Gmail / Google Workspace via OAuth
+          <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">— skips app passwords</span>
+        </h2>
       </div>
-      <span class="badge {% if oauth_configured %}badge-green{% else %}badge-gray{% endif %}">
-        {% if oauth_configured %}Configured{% else %}Not configured{% endif %}
+      <span class="badge {% if oauth_configured %}badge-green{% else %}badge-amber{% endif %}">
+        {% if oauth_configured %}Ready — click Connect{% else %}One-time setup needed{% endif %}
       </span>
     </div>
     <div class="card-body">
-      <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:0.75rem;">
-        Skips the app password requirement for Gmail by using the Gmail API directly.
-        Sends and detects replies without storing a password — but requires a one-time Google Cloud setup
-        and only works with Gmail / Google Workspace accounts.
-      </p>
+
       {% if oauth_configured %}
-      <a href="{{ url_for('settings.oauth_connect') }}" class="btn btn-ghost">
+      <!-- Already configured -->
+      <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1rem;">
+        Google OAuth credentials are loaded. Click below to authorize a Gmail or Google Workspace account.
+        You can connect multiple accounts by clicking Connect again after each one.
+      </p>
+      <a href="{{ url_for('settings.oauth_connect') }}" class="btn btn-primary">
         <i data-lucide="external-link"></i> Connect with Google
       </a>
+
       {% else %}
-      <details style="margin-bottom:0.75rem;">
-        <summary style="cursor:pointer; font-size:0.85rem; font-weight:600; color:var(--text-body);">Setup instructions</summary>
-        <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:1rem; margin-top:0.5rem; font-size:0.83rem; color:var(--text-body);">
-          <ol style="margin:0 0 0 1.1rem; line-height:2.1;">
-            <li>Go to <strong>Google Cloud Console</strong> → APIs &amp; Services → Credentials</li>
-            <li>Create an OAuth 2.0 Client ID (Web application)</li>
-            <li>Add <code>{{ request.host_url }}settings/email-accounts/oauth/callback</code> as an Authorized Redirect URI</li>
-            <li>Download the credentials JSON and either save it as <code>google_credentials.json</code> in the app root, or set the <code>GOOGLE_CREDENTIALS_JSON</code> environment variable to its contents</li>
+      <!-- Setup guide -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; align-items:start;">
+
+        <!-- Left: explanation + redirect URI -->
+        <div>
+          <p style="font-size:0.875rem; color:var(--text-body); margin-bottom:0.75rem;">
+            OAuth lets LeadFlow send and detect replies using the Gmail API — no app password needed.
+            It requires a <strong>one-time setup</strong> in Google Cloud Console (free). Follow the steps on the right.
+          </p>
+          <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:0.875rem; margin-bottom:1rem;">
+            <div style="font-size:0.78rem; font-weight:600; color:var(--text-muted); margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.04em;">
+              Your Redirect URI — copy this exactly
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <code id="redirect-uri-val" style="font-size:0.8rem; word-break:break-all; flex:1; color:var(--text-body);">{{ request.host_url }}settings/email-accounts/oauth/callback</code>
+              <button type="button" class="btn btn-sm btn-ghost" onclick="copyRedirectUri()" title="Copy" style="flex-shrink:0;">
+                <i data-lucide="copy" style="width:14px;height:14px;"></i>
+              </button>
+            </div>
+            <div id="copy-confirm" style="font-size:0.75rem; color:var(--accent-1); margin-top:0.3rem; display:none;">Copied!</div>
+          </div>
+          <p style="font-size:0.8rem; color:var(--text-muted);">
+            Once you've downloaded the credentials JSON, either:<br>
+            • Save it as <code>google_credentials.json</code> in the app root, <strong>or</strong><br>
+            • Set the environment variable <code>GOOGLE_CREDENTIALS_JSON</code> to the file's full contents
+          </p>
+          <button class="btn btn-ghost" disabled title="Complete setup first" style="margin-top:0.75rem;">
+            <i data-lucide="external-link"></i> Connect with Google
+          </button>
+        </div>
+
+        <!-- Right: step-by-step checklist -->
+        <div>
+          <div style="font-size:0.82rem; font-weight:600; margin-bottom:0.75rem; color:var(--text-body);">Step-by-step setup</div>
+          <ol class="oauth-steps">
+            <li>
+              <strong>Open Google Cloud Console</strong><br>
+              <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> →
+              create a new project (e.g. "LeadFlow Email") or select an existing one.
+            </li>
+            <li>
+              <strong>Enable the Gmail API</strong><br>
+              APIs &amp; Services → Library → search <em>Gmail API</em> → Enable.
+            </li>
+            <li>
+              <strong>Configure the OAuth Consent Screen</strong><br>
+              APIs &amp; Services → OAuth consent screen → choose <strong>External</strong> (or Internal for Workspace).<br>
+              Fill in: App name (e.g. "LeadFlow AI"), your support email, developer email.
+              <span class="oauth-tip">Skip the logo — uploading one triggers verification. Leave it blank.</span><br>
+              Publishing status: leave as <strong>Testing</strong>. Click Save &amp; Continue through Scopes (nothing to add there).<br>
+              On the <strong>Test users</strong> step, add your own email address so you can authorize in Testing mode.
+            </li>
+            <li>
+              <strong>Create OAuth Credentials</strong><br>
+              Credentials → Create Credentials → OAuth 2.0 Client ID →
+              Application type: <strong>Web application</strong>.<br>
+              Under <em>Authorized redirect URIs</em>, paste the URI shown on the left exactly.
+            </li>
+            <li>
+              <strong>Download the JSON &amp; configure LeadFlow</strong><br>
+              Click the download icon next to your new Client ID. Copy the file contents into the
+              <code>GOOGLE_CREDENTIALS_JSON</code> environment variable (or save as <code>google_credentials.json</code>),
+              then restart the app. This page will show "Ready" when it's loaded.
+            </li>
           </ol>
         </div>
-      </details>
-      <button class="btn btn-ghost" disabled title="Configure Google OAuth credentials first">
-        <i data-lucide="external-link"></i> Connect with Google
-      </button>
+
+      </div>
       {% endif %}
+
     </div>
   </div>
 
@@ -551,6 +610,49 @@
   justify-content: center;
   flex-shrink: 0;
 }
+
+/* OAuth setup steps */
+.oauth-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: oauth-step;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.oauth-steps li {
+  counter-increment: oauth-step;
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--text-body);
+  line-height: 1.55;
+}
+.oauth-steps li::before {
+  content: counter(oauth-step);
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-1);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+.oauth-tip {
+  display: inline-block;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.76rem;
+  margin: 0.2rem 0;
+}
 </style>
 
 <script>
@@ -707,6 +809,15 @@ function openWarmupModal(accountId, tier, warmupEnabled, dailyLimit, warmupWeek,
 
 function closeWarmupModal() {
   document.getElementById('warmup-modal').style.display = 'none';
+}
+
+function copyRedirectUri() {
+  const val = document.getElementById('redirect-uri-val').textContent.trim();
+  navigator.clipboard.writeText(val).then(() => {
+    const el = document.getElementById('copy-confirm');
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 2000);
+  });
 }
 
 function toggleAccount(accountId, active) {
