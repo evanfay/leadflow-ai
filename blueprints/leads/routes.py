@@ -94,6 +94,7 @@ def upload():
             ]
 
             imported = duplicates = invalid = 0
+            new_leads = []
             for row in rows:
                 email = row.get(mapping['email'], '').strip()
                 if not email or '@' not in email:
@@ -133,11 +134,41 @@ def upload():
                     source='upload',
                 )
                 db.session.add(lead)
+                new_leads.append(lead)
                 imported += 1
+
+            # Optional campaign enrollment
+            campaign_id = request.form.get('campaign_id', '').strip()
+            new_campaign_name = request.form.get('new_campaign_name', '').strip()
+            campaign = None
+
+            if campaign_id == '__new__' and new_campaign_name:
+                campaign = Campaign(user_id=current_user.id, name=new_campaign_name)
+                db.session.add(campaign)
+            elif campaign_id and campaign_id != '__new__':
+                campaign = Campaign.query.filter_by(
+                    id=int(campaign_id), user_id=current_user.id
+                ).first()
+
+            # Flush to get IDs before creating EnrolledLead rows
+            db.session.flush()
+
+            enrolled_count = 0
+            if campaign:
+                for lead in new_leads:
+                    el = EnrolledLead(
+                        campaign_id=campaign.id,
+                        lead_id=lead.id,
+                        status=EnrolledStatus.ACTIVE,
+                    )
+                    db.session.add(el)
+                    enrolled_count += 1
 
             db.session.commit()
 
             parts = [f'Imported {imported} leads.']
+            if campaign and enrolled_count:
+                parts.append(f'Enrolled {enrolled_count} in "{campaign.name}".')
             if duplicates:
                 parts.append(f'{duplicates} already in your pool (skipped).')
             if invalid:
@@ -201,10 +232,15 @@ def upload():
                 'col_signal_2':   next((h for h in headers if 'signal' in h.lower() and '2' in h), ''),
             }
 
+            campaigns = Campaign.query.filter_by(
+                user_id=current_user.id
+            ).order_by(Campaign.name).all()
+
             return render_template('leads/upload.html',
                                    rows=rows[:5], headers=headers,
                                    mapping=auto_map, upload_id=upload_id,
-                                   total_rows=len(rows))
+                                   total_rows=len(rows),
+                                   campaigns=campaigns)
 
     return render_template('leads/upload.html', rows=[], headers=[], mapping={})
 
@@ -617,15 +653,27 @@ def bulk_delete():
 @leads_bp.route('/bulk-enroll', methods=['POST'])
 @login_required
 def bulk_enroll():
-    data = request.form
     lead_ids = request.form.getlist('lead_ids')
-    campaign_id = data.get('campaign_id')
+    campaign_id = request.form.get('campaign_id', '').strip()
+    new_campaign_name = request.form.get('new_campaign_name', '').strip()
 
-    if not lead_ids or not campaign_id:
-        flash('Select leads and a campaign.', 'warning')
+    if not lead_ids:
+        flash('Select at least one lead.', 'warning')
         return redirect(url_for('leads.pool'))
 
-    campaign = Campaign.query.filter_by(id=int(campaign_id), user_id=current_user.id).first_or_404()
+    if not campaign_id:
+        flash('Select a campaign or create a new one.', 'warning')
+        return redirect(url_for('leads.pool'))
+
+    if campaign_id == '__new__':
+        if not new_campaign_name:
+            flash('Enter a name for the new campaign.', 'warning')
+            return redirect(url_for('leads.pool'))
+        campaign = Campaign(user_id=current_user.id, name=new_campaign_name)
+        db.session.add(campaign)
+        db.session.flush()
+    else:
+        campaign = Campaign.query.filter_by(id=int(campaign_id), user_id=current_user.id).first_or_404()
 
     enrolled = 0
     skipped = 0

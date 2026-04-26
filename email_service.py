@@ -21,13 +21,15 @@ def send_email(account, to_email: str, subject: str, body: str, user) -> tuple:
 
         if account.auth_method == 'smtp':
             password = decrypt(account.smtp_password_encrypted)
-            # Try Gmail SSL first, fall back to STARTTLS
-            try:
-                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            host = account.smtp_host or 'smtp.gmail.com'
+            port = account.smtp_port or 465
+            if port == 465:
+                with smtplib.SMTP_SSL(host, port) as smtp:
                     smtp.login(account.email_address, password)
                     smtp.send_message(msg)
-            except smtplib.SMTPConnectError:
-                with smtplib.SMTP('smtp.gmail.com', 587) as smtp:
+            else:
+                with smtplib.SMTP(host, port) as smtp:
+                    smtp.ehlo()
                     smtp.starttls()
                     smtp.login(account.email_address, password)
                     smtp.send_message(msg)

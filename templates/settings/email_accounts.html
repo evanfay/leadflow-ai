@@ -80,6 +80,15 @@
               <span class="badge badge-gray">No warmup</span>
             {% endif %}
 
+            <!-- IMAP / reply detection badge -->
+            {% if account.auth_method == 'oauth' %}
+              <span class="badge badge-blue" title="Replies detected via Gmail API">Reply detection: OAuth</span>
+            {% elif account.imap_host %}
+              <span class="badge badge-green" title="IMAP configured for reply detection">Reply detection: IMAP</span>
+            {% else %}
+              <span class="badge badge-gray" title="No reply detection — configure IMAP in Settings">No reply detection</span>
+            {% endif %}
+
             <span class="badge {% if account.active %}badge-green{% else %}badge-gray{% endif %}">
               {{ 'Active' if account.active else 'Paused' }}
             </span>
@@ -103,7 +112,7 @@
         </div>
 
         <div class="account-actions" style="display:flex; align-items:center; gap:0.75rem;">
-          <button class="btn btn-sm btn-ghost" onclick="openWarmupModal({{ account.id }}, '{{ account.warmup_tier or 'medium' }}', {{ 'true' if account.warmup_enabled else 'false' }}, {{ account.daily_limit }}, {{ account.warmup_week }})">
+          <button class="btn btn-sm btn-ghost" onclick="openWarmupModal({{ account.id }}, '{{ account.warmup_tier or 'medium' }}', {{ 'true' if account.warmup_enabled else 'false' }}, {{ account.daily_limit }}, {{ account.warmup_week }}, '{{ account.imap_host or '' }}', {{ account.imap_port or 993 }})">
             <i data-lucide="settings-2"></i> Settings
           </button>
 
@@ -134,136 +143,278 @@
     {% endif %}
   </div>
 
-  <!-- Add Account: OAuth -->
-  <div class="card">
+  <!-- Add Account: SMTP + IMAP -->
+  <div class="card" style="grid-column: 1 / -1;">
     <div class="card-header">
-      <h2 class="card-title">
-        <i data-lucide="shield-check" style="color:#4285f4; width:18px; height:18px;"></i>
-        Connect Gmail (OAuth)
-      </h2>
+      <div>
+        <h2 class="card-title">Add Email Account</h2>
+        <p class="card-subtitle">Works with any provider — Gmail, Outlook, Yahoo, custom domains</p>
+      </div>
     </div>
     <div class="card-body">
-      <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:0.5rem;">
-        Recommended. No password stored. Enables automatic reply detection.
-      </p>
-      <ul style="font-size:0.82rem; color:var(--text-muted); margin:0 0 1.25rem 1rem; line-height:1.8;">
-        <li>Requires a Google Cloud project (one-time setup)</li>
-        <li>Sends via Gmail API — high deliverability</li>
-        <li>Auto-detects replies and pauses sequences</li>
-      </ul>
-      <a href="{{ url_for('settings.oauth_connect') }}" class="btn btn-primary">
-        <i data-lucide="external-link"></i> Connect with Google
-      </a>
-    </div>
-  </div>
-
-  <!-- Add Account: SMTP -->
-  <div class="card">
-    <div class="card-header">
-      <h2 class="card-title">Add Gmail via App Password</h2>
-    </div>
-    <div class="card-body">
-      <p style="color:var(--text-body); font-size:0.875rem; margin-bottom:0.5rem;">
-        Simpler setup. Works immediately after generating an app password.
-      </p>
       <form method="POST" action="{{ url_for('settings.add_email_account') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
 
-        <div class="form-group">
-          <label class="form-label">Gmail Address</label>
-          <input type="email" name="email_address" class="form-control"
-                 placeholder="you@gmail.com" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">App Password</label>
-          <input type="password" name="smtp_password" class="form-control"
-                 placeholder="16-character Google App Password" required>
-          <div class="form-hint">
-            Go to <a href="https://myaccount.google.com/apppasswords" target="_blank">myaccount.google.com/apppasswords</a>
-            → Create &rarr; select "Mail". Requires 2-Step Verification to be on.
+        <!-- Row 1: provider + email -->
+        <div style="display:flex; flex-wrap:wrap; align-items:flex-end; gap:1rem; margin-bottom:1.25rem;">
+          <div>
+            <label class="form-label">Email Provider</label>
+            <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+              <button type="button" class="cap-preset-btn active" id="preset-gmail"
+                      onclick="setProviderPreset('gmail', this)">Gmail</button>
+              <button type="button" class="cap-preset-btn" id="preset-workspace"
+                      onclick="setProviderPreset('workspace', this)">Google Workspace</button>
+              <button type="button" class="cap-preset-btn" id="preset-outlook"
+                      onclick="setProviderPreset('outlook', this)">Outlook / 365</button>
+              <button type="button" class="cap-preset-btn" id="preset-yahoo"
+                      onclick="setProviderPreset('yahoo', this)">Yahoo</button>
+              <button type="button" class="cap-preset-btn" id="preset-custom"
+                      onclick="setProviderPreset('custom', this)">Other</button>
+            </div>
+          </div>
+          <div style="flex:1; min-width:220px;">
+            <label class="form-label">Email Address</label>
+            <input type="email" name="email_address" class="form-control"
+                   placeholder="you@example.com" required>
           </div>
         </div>
 
-        <!-- Daily cap section -->
-        <div class="form-group">
-          <label class="form-label">Daily Send Cap</label>
+        <!-- Row 2: SMTP | IMAP side by side -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.25rem;">
 
-          <!-- Quick presets -->
-          <div class="cap-presets" id="smtp-cap-presets">
-            <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 20, this)">20</button>
-            <button type="button" class="cap-preset-btn active" onclick="setCapPreset('smtp-daily-limit', 30, this)">30</button>
-            <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 50, this)">50</button>
-            <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 75, this)">75</button>
-            <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 100, this)">100</button>
-            <span style="color:var(--text-muted); font-size:0.8rem; align-self:center;">or type your own:</span>
-            <input type="number" name="daily_limit" id="smtp-daily-limit" class="form-control cap-custom-input"
-                   value="30" min="1" max="2000"
-                   oninput="clearPresetActive('smtp-cap-presets')">
-            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-size:0.875rem; white-space:nowrap; margin-left:0.5rem;">
-              <input type="checkbox" id="smtp-no-cap" onchange="toggleNoCap(this, 'smtp-daily-limit', 'smtp-cap-presets')"
+          <!-- SMTP -->
+          <div style="border:1px solid var(--border); border-radius:var(--radius); padding:1rem;">
+            <div style="font-weight:600; font-size:0.875rem; margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">
+              <i data-lucide="send" style="width:14px;height:14px;"></i> Outgoing Mail (SMTP)
+            </div>
+            <div style="display:flex; gap:0.5rem; margin-bottom:0.75rem;">
+              <div style="flex:1;">
+                <label class="form-label" style="font-size:0.78rem;">Host</label>
+                <input type="text" name="smtp_host" id="smtp-host" class="form-control"
+                       value="smtp.gmail.com" placeholder="smtp.example.com" required>
+              </div>
+              <div style="width:80px;">
+                <label class="form-label" style="font-size:0.78rem;">Port</label>
+                <input type="number" name="smtp_port" id="smtp-port" class="form-control" value="465">
+              </div>
+            </div>
+            <div>
+              <label class="form-label" id="smtp-password-label" style="font-size:0.78rem;">App Password</label>
+              <input type="password" name="smtp_password" id="smtp-password" class="form-control"
+                     placeholder="App password or SMTP password" required>
+              <div class="form-hint" id="smtp-password-hint" style="margin-top:0.35rem; font-size:0.75rem;">
+                Go to <a href="https://myaccount.google.com/apppasswords" target="_blank">myaccount.google.com/apppasswords</a>
+                → Create → Mail. Requires 2-Step Verification.
+                Your regular Gmail password won't work — Google disabled that for third-party apps in 2022.
+              </div>
+            </div>
+          </div>
+
+          <!-- IMAP -->
+          <div style="border:1px solid var(--border); border-radius:var(--radius); padding:1rem;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.4rem;">
+              <div style="font-weight:600; font-size:0.875rem; display:flex; align-items:center; gap:0.5rem;">
+                <i data-lucide="inbox" style="width:14px;height:14px;"></i> Reply Detection (IMAP)
+              </div>
+              <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.8rem;">
+                <input type="checkbox" id="imap-enabled-toggle" checked
+                       onchange="toggleImapSection(this.checked)"
+                       style="accent-color:var(--accent-1);">
+                Enable
+              </label>
+            </div>
+            <p style="font-size:0.77rem; color:var(--text-muted); margin-bottom:0.65rem;">
+              Detects replies and auto-pauses sequences. Without this, sending works but you won't see responses.
+            </p>
+            <div id="imap-fields">
+              <div style="display:flex; gap:0.5rem; margin-bottom:0.6rem;">
+                <div style="flex:1;">
+                  <label class="form-label" style="font-size:0.78rem;">Host</label>
+                  <input type="text" name="imap_host" id="imap-host" class="form-control"
+                         value="imap.gmail.com" placeholder="imap.example.com">
+                </div>
+                <div style="width:80px;">
+                  <label class="form-label" style="font-size:0.78rem;">Port</label>
+                  <input type="number" name="imap_port" id="imap-port" class="form-control" value="993">
+                </div>
+              </div>
+              <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; cursor:pointer; margin-bottom:0.4rem;">
+                <input type="checkbox" name="imap_same_password" id="imap-same-pw" checked
+                       onchange="toggleImapPassword(!this.checked)"
+                       style="accent-color:var(--accent-1);">
+                Same password as SMTP
+              </label>
+              <div id="imap-password-wrap" style="display:none;">
+                <input type="password" name="imap_password" id="imap-password" class="form-control"
+                       placeholder="IMAP password">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: daily cap | warmup | submit -->
+        <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
+          <div style="flex:1; min-width:260px;">
+            <label class="form-label">Daily Send Cap <span style="font-weight:400; color:var(--text-muted); font-size:0.78rem;">— per address</span></label>
+            <div class="cap-presets" id="smtp-cap-presets">
+              <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 20, this)">20</button>
+              <button type="button" class="cap-preset-btn active" onclick="setCapPreset('smtp-daily-limit', 30, this)">30</button>
+              <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 50, this)">50</button>
+              <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 75, this)">75</button>
+              <button type="button" class="cap-preset-btn" onclick="setCapPreset('smtp-daily-limit', 100, this)">100</button>
+              <input type="number" name="daily_limit" id="smtp-daily-limit" class="form-control cap-custom-input"
+                     value="30" min="1" max="2000" oninput="clearPresetActive('smtp-cap-presets')">
+              <label style="display:flex; align-items:center; gap:0.35rem; cursor:pointer; font-size:0.82rem; white-space:nowrap;">
+                <input type="checkbox" id="smtp-no-cap" onchange="toggleNoCap(this, 'smtp-daily-limit', 'smtp-cap-presets')"
+                       style="accent-color:var(--accent-1);">
+                No cap
+              </label>
+            </div>
+            <div class="form-hint" style="margin-top:0.4rem;">5 accounts × 30/day = 150/day total. 30 is safe without warmup.</div>
+          </div>
+
+          <div style="flex:1; min-width:200px;">
+            <label class="form-label" style="display:flex; align-items:center; gap:0.5rem;">
+              <input type="checkbox" name="warmup_enabled" id="smtp-warmup-toggle" value="1"
+                     onchange="document.getElementById('smtp-warmup-options').style.display = this.checked ? '' : 'none'"
                      style="accent-color:var(--accent-1);">
-              No cap
+              Enable email warmup
             </label>
+            <div class="form-hint">Ramps send volume over weeks to build sender reputation.</div>
+            <div id="smtp-warmup-options" style="display:none; margin-top:0.75rem;">
+              <div style="display:flex; flex-direction:column; gap:0.5rem;">
+                <label class="warmup-tier-card">
+                  <input type="radio" name="warmup_tier" value="slow" style="accent-color:var(--accent-1);">
+                  <div>
+                    <div style="font-weight:600; font-size:0.85rem;">Slow — 5 weeks</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">5 → 10 → 20 → 35 → 50/day</div>
+                  </div>
+                </label>
+                <label class="warmup-tier-card">
+                  <input type="radio" name="warmup_tier" value="medium" checked style="accent-color:var(--accent-1);">
+                  <div>
+                    <div style="font-weight:600; font-size:0.85rem;">Medium — 4 weeks <span class="badge badge-orange" style="font-size:0.62rem; vertical-align:middle;">Recommended</span></div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">10 → 25 → 40 → 60/day</div>
+                  </div>
+                </label>
+                <label class="warmup-tier-card">
+                  <input type="radio" name="warmup_tier" value="aggressive" style="accent-color:var(--accent-1);">
+                  <div>
+                    <div style="font-weight:600; font-size:0.85rem;">Aggressive — 3 weeks</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">20 → 40 → 60/day</div>
+                  </div>
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div class="form-hint" style="margin-top:0.5rem;">
-            <strong>30/day</strong> is safe for most new accounts without warmup. With a completed warmup, 50–100/day is reasonable.
-            "No cap" removes all limits — only use on accounts with a strong established reputation.
+          <div style="display:flex; align-items:flex-end; padding-bottom:2px;">
+            <button type="submit" class="btn btn-primary">
+              <i data-lucide="plus"></i> Add Account
+            </button>
           </div>
         </div>
 
-        <!-- Warmup section -->
-        <div class="form-group">
-          <label class="form-label" style="display:flex; align-items:center; gap:0.5rem;">
-            <input type="checkbox" name="warmup_enabled" id="smtp-warmup-toggle" value="1"
-                   onchange="document.getElementById('smtp-warmup-options').style.display = this.checked ? '' : 'none'"
-                   style="accent-color:var(--accent-1);">
-            Enable email warmup
-          </label>
-          <div class="form-hint">
-            Gradually ramps up send volume over several weeks to build sender reputation with Gmail.
-          </div>
-        </div>
-
-        <div id="smtp-warmup-options" style="display:none; margin-bottom:1.25rem;">
-          <label class="form-label">Warmup Tier</label>
-          <div style="display:flex; flex-direction:column; gap:0.6rem;">
-
-            <label class="warmup-tier-card" id="tier-slow-card">
-              <input type="radio" name="warmup_tier" value="slow" style="accent-color:var(--accent-1);">
-              <div>
-                <div style="font-weight:600; font-size:0.9rem;">Slow — 5 weeks</div>
-                <div style="font-size:0.8rem; color:var(--text-muted);">5 &rarr; 10 &rarr; 20 &rarr; 35 &rarr; 50/day</div>
-                <div style="font-size:0.78rem; color:var(--text-muted);">Best for brand-new domains or accounts with no sending history</div>
-              </div>
-            </label>
-
-            <label class="warmup-tier-card selected" id="tier-medium-card">
-              <input type="radio" name="warmup_tier" value="medium" checked style="accent-color:var(--accent-1);">
-              <div>
-                <div style="font-weight:600; font-size:0.9rem;">Medium — 4 weeks <span class="badge badge-orange" style="font-size:0.65rem; vertical-align:middle;">Recommended</span></div>
-                <div style="font-size:0.8rem; color:var(--text-muted);">10 &rarr; 25 &rarr; 40 &rarr; 60/day</div>
-                <div style="font-size:0.78rem; color:var(--text-muted);">Standard Gmail account with some sending history</div>
-              </div>
-            </label>
-
-            <label class="warmup-tier-card" id="tier-aggressive-card">
-              <input type="radio" name="warmup_tier" value="aggressive" style="accent-color:var(--accent-1);">
-              <div>
-                <div style="font-weight:600; font-size:0.9rem;">Aggressive — 3 weeks</div>
-                <div style="font-size:0.8rem; color:var(--text-muted);">20 &rarr; 40 &rarr; 60/day</div>
-                <div style="font-size:0.78rem; color:var(--text-muted);">Established domain with clean sending history — higher risk on new accounts</div>
-              </div>
-            </label>
-
-          </div>
-        </div>
-
-        <button type="submit" class="btn btn-primary">
-          <i data-lucide="plus"></i> Add Account
-        </button>
       </form>
+    </div>
+  </div>
+
+  <!-- Gmail OAuth — alternative option -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-header">
+      <div style="display:flex; align-items:center; gap:0.6rem;">
+        <i data-lucide="shield-check" style="color:#4285f4; width:17px; height:17px;"></i>
+        <h2 class="card-title">Connect Gmail / Google Workspace via OAuth
+          <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">— skips app passwords</span>
+        </h2>
+      </div>
+      <span class="badge {% if oauth_configured %}badge-green{% else %}badge-amber{% endif %}">
+        {% if oauth_configured %}Ready — click Connect{% else %}One-time setup needed{% endif %}
+      </span>
+    </div>
+    <div class="card-body">
+
+      {% if oauth_configured %}
+      <!-- Already configured -->
+      <p style="color:var(--text-muted); font-size:0.875rem; margin-bottom:1rem;">
+        Google OAuth credentials are loaded. Click below to authorize a Gmail or Google Workspace account.
+        You can connect multiple accounts by clicking Connect again after each one.
+      </p>
+      <a href="{{ url_for('settings.oauth_connect') }}" class="btn btn-primary">
+        <i data-lucide="external-link"></i> Connect with Google
+      </a>
+
+      {% else %}
+      <!-- Setup guide -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; align-items:start;">
+
+        <!-- Left: explanation + redirect URI -->
+        <div>
+          <p style="font-size:0.875rem; color:var(--text-body); margin-bottom:0.75rem;">
+            OAuth lets LeadFlow send and detect replies using the Gmail API — no app password needed.
+            It requires a <strong>one-time setup</strong> in Google Cloud Console (free). Follow the steps on the right.
+          </p>
+          <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:0.875rem; margin-bottom:1rem;">
+            <div style="font-size:0.78rem; font-weight:600; color:var(--text-muted); margin-bottom:0.4rem; text-transform:uppercase; letter-spacing:0.04em;">
+              Your Redirect URI — copy this exactly
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <code id="redirect-uri-val" style="font-size:0.8rem; word-break:break-all; flex:1; color:var(--text-body);">{{ request.host_url }}settings/email-accounts/oauth/callback</code>
+              <button type="button" class="btn btn-sm btn-ghost" onclick="copyRedirectUri()" title="Copy" style="flex-shrink:0;">
+                <i data-lucide="copy" style="width:14px;height:14px;"></i>
+              </button>
+            </div>
+            <div id="copy-confirm" style="font-size:0.75rem; color:var(--accent-1); margin-top:0.3rem; display:none;">Copied!</div>
+          </div>
+          <p style="font-size:0.8rem; color:var(--text-muted);">
+            Once you've downloaded the credentials JSON, either:<br>
+            • Save it as <code>google_credentials.json</code> in the app root, <strong>or</strong><br>
+            • Set the environment variable <code>GOOGLE_CREDENTIALS_JSON</code> to the file's full contents
+          </p>
+          <button class="btn btn-ghost" disabled title="Complete setup first" style="margin-top:0.75rem;">
+            <i data-lucide="external-link"></i> Connect with Google
+          </button>
+        </div>
+
+        <!-- Right: step-by-step checklist -->
+        <div>
+          <div style="font-size:0.82rem; font-weight:600; margin-bottom:0.75rem; color:var(--text-body);">Step-by-step setup</div>
+          <ol class="oauth-steps">
+            <li>
+              <strong>Open Google Cloud Console</strong><br>
+              <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> →
+              create a new project (e.g. "LeadFlow Email") or select an existing one.
+            </li>
+            <li>
+              <strong>Enable the Gmail API</strong><br>
+              APIs &amp; Services → Library → search <em>Gmail API</em> → Enable.
+            </li>
+            <li>
+              <strong>Configure the OAuth Consent Screen</strong><br>
+              APIs &amp; Services → OAuth consent screen → choose <strong>External</strong> (or Internal for Workspace).<br>
+              Fill in: App name (e.g. "LeadFlow AI"), your support email, developer email.
+              <span class="oauth-tip">Skip the logo — uploading one triggers verification. Leave it blank.</span><br>
+              Publishing status: leave as <strong>Testing</strong>. Click Save &amp; Continue through Scopes (nothing to add there).<br>
+              On the <strong>Test users</strong> step, add your own email address so you can authorize in Testing mode.
+            </li>
+            <li>
+              <strong>Create OAuth Credentials</strong><br>
+              Credentials → Create Credentials → OAuth 2.0 Client ID →
+              Application type: <strong>Web application</strong>.<br>
+              Under <em>Authorized redirect URIs</em>, paste the URI shown on the left exactly.
+            </li>
+            <li>
+              <strong>Download the JSON &amp; configure LeadFlow</strong><br>
+              Click the download icon next to your new Client ID. Copy the file contents into the
+              <code>GOOGLE_CREDENTIALS_JSON</code> environment variable (or save as <code>google_credentials.json</code>),
+              then restart the app. This page will show "Ready" when it's loaded.
+            </li>
+          </ol>
+        </div>
+
+      </div>
+      {% endif %}
+
     </div>
   </div>
 
@@ -351,6 +502,35 @@
           </div>
         </div>
 
+        <!-- IMAP / Reply detection -->
+        <div class="form-group" style="margin-top:1rem;">
+          <label class="form-label" style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+            <i data-lucide="inbox" style="width:14px;height:14px;"></i>
+            Reply Detection (IMAP)
+          </label>
+          <div style="border:1px solid var(--border); border-radius:var(--radius); padding:0.875rem;">
+            <p style="font-size:0.78rem; color:var(--text-muted); margin:0 0 0.75rem;">
+              Lets LeadFlow detect replies and auto-pause sequences. Leave blank to disable.
+            </p>
+            <div style="display:flex; gap:0.75rem; margin-bottom:0.75rem;">
+              <div style="flex:1;">
+                <label class="form-label" style="font-size:0.78rem;">IMAP Host</label>
+                <input type="text" name="imap_host" id="modal-imap-host" class="form-control"
+                       placeholder="imap.gmail.com">
+              </div>
+              <div style="width:85px;">
+                <label class="form-label" style="font-size:0.78rem;">Port</label>
+                <input type="number" name="imap_port" id="modal-imap-port" class="form-control" value="993">
+              </div>
+            </div>
+            <div>
+              <label class="form-label" style="font-size:0.78rem;">IMAP Password <span style="font-weight:400; color:var(--text-muted);">(leave blank to keep current)</span></label>
+              <input type="password" name="imap_password" id="modal-imap-password" class="form-control"
+                     placeholder="Leave blank to keep existing password">
+            </div>
+          </div>
+        </div>
+
         <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1.5rem;">
           <button type="button" class="btn btn-ghost" onclick="closeWarmupModal()">Cancel</button>
           <button type="submit" class="btn btn-primary">Save Settings</button>
@@ -430,9 +610,114 @@
   justify-content: center;
   flex-shrink: 0;
 }
+
+/* OAuth setup steps */
+.oauth-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: oauth-step;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.oauth-steps li {
+  counter-increment: oauth-step;
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--text-body);
+  line-height: 1.55;
+}
+.oauth-steps li::before {
+  content: counter(oauth-step);
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-1);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+.oauth-tip {
+  display: inline-block;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.76rem;
+  margin: 0.2rem 0;
+}
 </style>
 
 <script>
+const PROVIDERS = {
+  gmail:     { smtpHost: 'smtp.gmail.com',       smtpPort: 465, imapHost: 'imap.gmail.com',              imapPort: 993, pwLabel: 'App Password',             pwPlaceholder: '16-character Google App Password',  pwHint: 'Go to <a href="https://myaccount.google.com/apppasswords" target="_blank">myaccount.google.com/apppasswords</a> → Create → select "Mail". Requires 2-Step Verification. <strong>Your regular Gmail password won\'t work</strong> — Google disabled that for third-party apps in 2022.' },
+  workspace: { smtpHost: 'smtp.gmail.com',       smtpPort: 465, imapHost: 'imap.gmail.com',              imapPort: 993, pwLabel: 'App Password',             pwPlaceholder: '16-character Google App Password',  pwHint: 'Same as Gmail. In Google Admin Console, ensure "Less secure app access" is off and use an App Password under your Workspace account.' },
+  outlook:   { smtpHost: 'smtp.office365.com',   smtpPort: 587, imapHost: 'outlook.office365.com',       imapPort: 993, pwLabel: 'Password or App Password', pwPlaceholder: 'Microsoft account password',         pwHint: 'Use your Microsoft password, or create an app password at <a href="https://mysignins.microsoft.com/security-info" target="_blank">mysignins.microsoft.com</a> if MFA is enabled.' },
+  yahoo:     { smtpHost: 'smtp.mail.yahoo.com',  smtpPort: 465, imapHost: 'imap.mail.yahoo.com',         imapPort: 993, pwLabel: 'App Password',             pwPlaceholder: 'Yahoo app password',                pwHint: 'Go to Yahoo Account Security → Generate app password. Your regular Yahoo password won\'t work for SMTP.' },
+  custom:    { smtpHost: '',                      smtpPort: '',  imapHost: '',                            imapPort: 993, pwLabel: 'SMTP Password',            pwPlaceholder: 'Your SMTP password',                pwHint: 'Check your email provider\'s documentation. Port 465 uses SSL; port 587 uses STARTTLS.' },
+};
+
+function setProviderPreset(key, btn) {
+  document.querySelectorAll('.cap-preset-btn[id^="preset-"]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  const p = PROVIDERS[key];
+  if (!p) return;
+
+  function setField(id, val, locked) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = val;
+    el.readOnly = locked && val !== '';
+    el.style.opacity = (locked && val !== '') ? '0.65' : '';
+  }
+
+  setField('smtp-host', p.smtpHost, true);
+  setField('smtp-port', p.smtpPort, true);
+  setField('imap-host', p.imapHost, true);
+  setField('imap-port', p.imapPort, true);
+
+  document.getElementById('smtp-password-label').textContent = p.pwLabel;
+  document.getElementById('smtp-password').placeholder = p.pwPlaceholder;
+  document.getElementById('smtp-password-hint').innerHTML = p.pwHint;
+}
+
+function toggleImapSection(enabled) {
+  const fields = document.getElementById('imap-fields');
+  if (!fields) return;
+  fields.style.display = enabled ? '' : 'none';
+  if (!enabled) {
+    // Clear host so backend won't store IMAP
+    const h = document.getElementById('imap-host');
+    if (h) h.value = '';
+  } else {
+    // Restore to current preset value
+    const presetBtn = document.querySelector('.cap-preset-btn[id^="preset-"].active');
+    if (presetBtn) {
+      const key = presetBtn.id.replace('preset-', '');
+      const p = PROVIDERS[key];
+      if (p) {
+        const h = document.getElementById('imap-host');
+        const port = document.getElementById('imap-port');
+        if (h && !h.value) h.value = p.imapHost;
+        if (port && !port.value) port.value = p.imapPort;
+      }
+    }
+  }
+}
+
+function toggleImapPassword(show) {
+  const wrap = document.getElementById('imap-password-wrap');
+  if (wrap) wrap.style.display = show ? '' : 'none';
+}
+
 function setCapPreset(inputId, value, btn) {
   // Set the input value
   document.getElementById(inputId).value = value;
@@ -470,7 +755,7 @@ function toggleNoCap(checkbox, inputId, containerId) {
   }
 }
 
-function openWarmupModal(accountId, tier, warmupEnabled, dailyLimit, warmupWeek) {
+function openWarmupModal(accountId, tier, warmupEnabled, dailyLimit, warmupWeek, imapHost, imapPort) {
   const modal = document.getElementById('warmup-modal');
   const form  = document.getElementById('warmup-form');
   form.action = `/settings/email-accounts/${accountId}/update`;
@@ -510,12 +795,29 @@ function openWarmupModal(accountId, tier, warmupEnabled, dailyLimit, warmupWeek)
   // Week
   document.getElementById('modal-warmup-week').value = warmupWeek;
 
+  // IMAP
+  const modalImapHost = document.getElementById('modal-imap-host');
+  const modalImapPort = document.getElementById('modal-imap-port');
+  if (modalImapHost) modalImapHost.value = imapHost || '';
+  if (modalImapPort) modalImapPort.value = imapPort || 993;
+  const modalImapPw = document.getElementById('modal-imap-password');
+  if (modalImapPw) modalImapPw.value = '';
+
   modal.style.display = 'flex';
   lucide.createIcons();
 }
 
 function closeWarmupModal() {
   document.getElementById('warmup-modal').style.display = 'none';
+}
+
+function copyRedirectUri() {
+  const val = document.getElementById('redirect-uri-val').textContent.trim();
+  navigator.clipboard.writeText(val).then(() => {
+    const el = document.getElementById('copy-confirm');
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 2000);
+  });
 }
 
 function toggleAccount(accountId, active) {

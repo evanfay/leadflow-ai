@@ -22,11 +22,28 @@ def save_settings():
     return redirect(url_for('settings.index'))
 
 
+def _oauth_secrets_file():
+    """Return a path to Google OAuth secrets JSON, supporting a file or env var."""
+    secrets_file = current_app.config.get('GOOGLE_CLIENT_SECRETS_FILE', 'google_credentials.json')
+    if os.path.exists(secrets_file):
+        return secrets_file
+    creds_json = os.environ.get('GOOGLE_CREDENTIALS_JSON', '').strip()
+    if creds_json:
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+        tmp.write(creds_json)
+        tmp.close()
+        return tmp.name
+    return None
+
+
 @settings_bp.route('/email-accounts')
 @login_required
 def email_accounts():
     accounts = EmailAccount.query.filter_by(user_id=current_user.id).all()
-    return render_template('settings/email_accounts.html', accounts=accounts)
+    oauth_configured = _oauth_secrets_file() is not None
+    return render_template('settings/email_accounts.html', accounts=accounts,
+                           oauth_configured=oauth_configured)
 
 
 @settings_bp.route('/email-accounts', methods=['POST'])
@@ -34,6 +51,21 @@ def email_accounts():
 def add_email_account():
     email_address = request.form.get('email_address', '').strip()
     smtp_password = request.form.get('smtp_password', '').strip()
+    smtp_host = request.form.get('smtp_host', 'smtp.gmail.com').strip() or 'smtp.gmail.com'
+    try:
+        smtp_port = int(request.form.get('smtp_port', 465))
+    except (ValueError, TypeError):
+        smtp_port = 465
+
+    imap_host = request.form.get('imap_host', '').strip() or None
+    try:
+        imap_port = int(request.form.get('imap_port', 993))
+    except (ValueError, TypeError):
+        imap_port = 993
+    imap_password_raw = request.form.get('imap_password', '').strip()
+    # "same as SMTP" checkbox — reuse the smtp password for IMAP
+    if request.form.get('imap_same_password') and smtp_password:
+        imap_password_raw = smtp_password
 
     # daily_limit: 0 = no cap
     no_cap = request.form.get('no_cap') or (request.form.get('daily_limit', '30') == '0')
@@ -59,7 +91,12 @@ def add_email_account():
         user_id=current_user.id,
         email_address=email_address,
         auth_method='smtp',
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
         smtp_password_encrypted=encrypt(smtp_password),
+        imap_host=imap_host,
+        imap_port=imap_port if imap_host else None,
+        imap_password_encrypted=encrypt(imap_password_raw) if (imap_host and imap_password_raw) else None,
         daily_limit=daily_limit,
         warmup_enabled=warmup_enabled,
         warmup_tier=warmup_tier,
@@ -77,13 +114,21 @@ def add_email_account():
 @login_required
 def oauth_connect():
     """Start Gmail OAuth flow."""
-    secrets_file = current_app.config.get('GOOGLE_CLIENT_SECRETS_FILE', 'google_credentials.json')
-    if not os.path.exists(secrets_file):
-        flash('Google OAuth credentials file not found. Please configure GOOGLE_CLIENT_SECRETS_FILE.', 'danger')
+    secrets_file = _oauth_secrets_file()
+    if not secrets_file:
+        flash(
+            'Google OAuth is not configured. '
+            'Set GOOGLE_CREDENTIALS_JSON (paste the contents of your credentials.json) '
+            'or GOOGLE_CLIENT_SECRETS_FILE in your Railway environment variables.',
+            'danger'
+        )
         return redirect(url_for('settings.email_accounts'))
 
     try:
+        import os, hashlib, base64
         from google_auth_oauthlib.flow import Flow
+        from flask import session
+
         flow = Flow.from_client_secrets_file(
             secrets_file,
             scopes=[
@@ -92,11 +137,22 @@ def oauth_connect():
             ],
             redirect_uri=url_for('settings.oauth_callback', _external=True)
         )
+
+        # Generate PKCE code verifier + challenge so Google's token exchange works
+        code_verifier = base64.urlsafe_b64encode(os.urandom(40)).rstrip(b'=').decode()
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).rstrip(b'=').decode()
+
         auth_url, state = flow.authorization_url(
-            access_type='offline', include_granted_scopes='true', prompt='consent'
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent',
+            code_challenge=code_challenge,
+            code_challenge_method='S256',
         )
-        from flask import session
         session['oauth_state'] = state
+        session['oauth_code_verifier'] = code_verifier
         return redirect(auth_url)
     except Exception as e:
         flash(f'OAuth error: {e}', 'danger')
@@ -107,7 +163,7 @@ def oauth_connect():
 @login_required
 def oauth_callback():
     """Handle OAuth callback from Google."""
-    secrets_file = current_app.config.get('GOOGLE_CLIENT_SECRETS_FILE', 'google_credentials.json')
+    secrets_file = _oauth_secrets_file()
 
     try:
         from google_auth_oauthlib.flow import Flow
@@ -121,7 +177,15 @@ def oauth_callback():
             redirect_uri=url_for('settings.oauth_callback', _external=True),
             state=session.get('oauth_state')
         )
-        flow.fetch_token(authorization_response=request.url)
+        # Force https:// in the callback URL — Railway terminates SSL at the
+        # proxy so request.url may still carry http:// even after ProxyFix.
+        auth_response = request.url
+        if auth_response.startswith('http://'):
+            auth_response = 'https://' + auth_response[len('http://'):]
+
+        # Pass the PKCE code verifier generated during oauth_connect
+        code_verifier = session.get('oauth_code_verifier', '')
+        flow.fetch_token(authorization_response=auth_response, code_verifier=code_verifier)
         creds = flow.credentials
 
         # Get user's Gmail address
@@ -159,7 +223,9 @@ def oauth_callback():
         db.session.commit()
         flash(f'Gmail account {email_address} connected!', 'success')
     except Exception as e:
-        flash(f'OAuth callback error: {e}', 'danger')
+        import traceback
+        print(f'[OAuth] Callback error: {traceback.format_exc()}')
+        flash(f'OAuth error: {e}', 'danger')
 
     return redirect(url_for('settings.email_accounts'))
 
@@ -189,7 +255,6 @@ def update_email_account(account_id):
         daily_limit = int(daily_limit_raw)
     except (ValueError, TypeError):
         daily_limit = 30
-    # No-cap: form sends 0 or the no_cap checkbox
     account.daily_limit = max(0, daily_limit)
 
     # Warmup
@@ -200,6 +265,18 @@ def update_email_account(account_id):
         account.warmup_week = max(1, int(request.form.get('warmup_week', 1)))
     except (ValueError, TypeError):
         account.warmup_week = 1
+
+    # IMAP reply detection (optional update)
+    new_imap_host = request.form.get('imap_host', '').strip() or None
+    if new_imap_host:
+        account.imap_host = new_imap_host
+        try:
+            account.imap_port = int(request.form.get('imap_port', 993))
+        except (ValueError, TypeError):
+            account.imap_port = 993
+        imap_pw = request.form.get('imap_password', '').strip()
+        if imap_pw:
+            account.imap_password_encrypted = encrypt(imap_pw)
 
     db.session.commit()
     flash(f'Settings updated for {account.email_address}.', 'success')

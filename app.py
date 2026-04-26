@@ -12,6 +12,10 @@ from models import User
 def create_app():
     app = Flask(__name__)
 
+    # Trust Railway/Heroku reverse-proxy headers so url_for generates https:// URLs
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
     # Config
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-change-in-prod')
     db_url = os.environ.get('DATABASE_URL', 'sqlite:///leadflow.db')
@@ -90,6 +94,11 @@ def create_app():
         for _sql in [
             'ALTER TABLE users ADD COLUMN scraper_email_threshold INTEGER DEFAULT 6',
             'ALTER TABLE leads ADD COLUMN extra_data TEXT',
+            "ALTER TABLE email_accounts ADD COLUMN smtp_host VARCHAR(255) DEFAULT 'smtp.gmail.com'",
+            'ALTER TABLE email_accounts ADD COLUMN smtp_port INTEGER DEFAULT 465',
+            'ALTER TABLE email_accounts ADD COLUMN imap_host VARCHAR(255)',
+            'ALTER TABLE email_accounts ADD COLUMN imap_port INTEGER DEFAULT 993',
+            'ALTER TABLE email_accounts ADD COLUMN imap_password_encrypted TEXT',
         ]:
             try:
                 with db.engine.connect() as conn:
