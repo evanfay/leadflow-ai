@@ -48,6 +48,15 @@
     <input type="text" name="new_campaign_name" id="pool-new-campaign-input"
            class="form-control" placeholder="New campaign name…"
            style="max-width:200px; display:none;">
+
+    <!-- Starting touch selector -->
+    <select name="start_step" class="form-control" style="max-width:210px;" title="Where in the sequence should these leads start?">
+      <option value="0">Start at touch 1 (fresh)</option>
+      <option value="1">Already got touch 1 → start at touch 2</option>
+      <option value="2">Already got touches 1–2 → start at touch 3</option>
+      <option value="3">Already got touches 1–3 → start at touch 4</option>
+    </select>
+
     <button type="submit" class="btn btn-primary btn-sm">
       <i data-lucide="send"></i> Enroll in Campaign
     </button>

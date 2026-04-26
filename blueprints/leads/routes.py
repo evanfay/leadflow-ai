@@ -675,6 +675,13 @@ def bulk_enroll():
     else:
         campaign = Campaign.query.filter_by(id=int(campaign_id), user_id=current_user.id).first_or_404()
 
+    # start_step: how many touches have already been sent outside LeadFlow
+    # 0 = fresh, 1 = already sent touch 1, 2 = sent touches 1+2, etc.
+    try:
+        start_step = max(0, int(request.form.get('start_step', 0)))
+    except (ValueError, TypeError):
+        start_step = 0
+
     enrolled = 0
     skipped = 0
     for lid in lead_ids:
@@ -685,10 +692,16 @@ def bulk_enroll():
         if existing:
             skipped += 1
             continue
-        el = EnrolledLead(campaign_id=campaign.id, lead_id=lead.id, status=EnrolledStatus.ACTIVE)
+        el = EnrolledLead(
+            campaign_id=campaign.id,
+            lead_id=lead.id,
+            status=EnrolledStatus.ACTIVE,
+            current_step=start_step,
+        )
         db.session.add(el)
         enrolled += 1
 
     db.session.commit()
-    flash(f'Enrolled {enrolled} leads in "{campaign.name}". {skipped} already enrolled.', 'success')
+    step_msg = f' (starting at touch {start_step + 1})' if start_step > 0 else ''
+    flash(f'Enrolled {enrolled} leads in "{campaign.name}"{step_msg}. {skipped} already enrolled.', 'success')
     return redirect(url_for('leads.pool'))
