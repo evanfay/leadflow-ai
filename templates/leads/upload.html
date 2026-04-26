@@ -112,7 +112,7 @@
     <div class="card">
       <div class="card-header"><h2 class="card-title">Preview (first {{ rows|length }} rows)</h2></div>
       <div class="card-body" style="padding:0; overflow-x:auto;">
-        <table class="table" style="font-size:0.8rem;">
+        <table class="table table-compact" style="font-size:0.8rem;">
           <thead>
             <tr>
               {% for col in headers %}<th>{{ col }}</th>{% endfor %}
