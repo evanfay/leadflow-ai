@@ -135,11 +135,14 @@ def send_due_emails(app):
 
                     if today >= due_date and step.channel == 'Email' and step.is_auto:
                         from models import SendLog
-                        already_sent = SendLog.query.filter_by(
+                        existing_log = SendLog.query.filter_by(
                             enrolled_lead_id=el.id,
                             step_id=step.id
                         ).first()
-                        if already_sent:
+                        if existing_log:
+                            # Pre-loaded draft ready to auto-send
+                            if existing_log.status == 'queued' and existing_log.body_snippet:
+                                _send_queued_draft(existing_log, el, step, campaign)
                             continue
 
                         lead = el.lead
@@ -253,32 +256,67 @@ def _humanize_touch(slot):
     return labels.get(slot, slot.replace('_', ' ').title())
 
 
+def _pick_account(enrolled_lead, campaign):
+    """
+    Pick the sending account for this enrolled lead.
+    If a pinned account (from_account_id) is set and still active + under cap, use it.
+    Otherwise fall back to round-robin across all active accounts.
+    """
+    from models import SendLog, EmailAccount
+
+    # Pinned account takes priority
+    if enrolled_lead.from_account_id:
+        pinned = EmailAccount.query.filter_by(
+            id=enrolled_lead.from_account_id, active=True
+        ).first()
+        if pinned and _account_can_send(pinned):
+            return pinned
+        if pinned and not _account_can_send(pinned):
+            print(f'[Scheduler] Pinned account {pinned.email_address} at daily cap — skipping send for lead {enrolled_lead.lead_id}')
+            return None
+
+    # Round-robin fallback
+    accounts = EmailAccount.query.filter_by(user_id=campaign.user_id, active=True).all()
+    if not accounts:
+        return None
+    sent_count = SendLog.query.filter_by(enrolled_lead_id=enrolled_lead.id).count()
+    for i in range(len(accounts)):
+        candidate = accounts[(sent_count + i) % len(accounts)]
+        if _account_can_send(candidate):
+            return candidate
+    return None
+
+
+def _send_queued_draft(send_log, enrolled_lead, step, campaign):
+    """Send a pre-loaded queued draft immediately."""
+    from models import db
+    from email_service import send_email
+
+    account = _pick_account(enrolled_lead, campaign)
+    if not account:
+        print(f'[Scheduler] No available account for queued draft {send_log.id}')
+        return
+
+    lead = enrolled_lead.lead
+    success, error = send_email(account, lead.email, send_log.subject, send_log.body_snippet, campaign.user)
+    send_log.status = 'sent' if success else 'failed'
+    send_log.sent_at = datetime.utcnow() if success else None
+    send_log.from_account_id = account.id
+    db.session.commit()
+
+
 def _send_email_step(enrolled_lead, step, template, variant_label, subject, body, campaign):
     """Actually send the email via an active account, respecting warmup cap."""
     from models import db, SendLog, EmailAccount
     from email_service import send_email
 
-    accounts = EmailAccount.query.filter_by(user_id=campaign.user_id, active=True).all()
-    if not accounts:
-        print(f'[Scheduler] No active email accounts for user {campaign.user_id}')
-        return
-
-    # Pick an account that hasn't hit its daily cap (round-robin with cap check)
-    sent_count = SendLog.query.filter_by(enrolled_lead_id=enrolled_lead.id).count()
-    account = None
-    for i in range(len(accounts)):
-        candidate = accounts[(sent_count + i) % len(accounts)]
-        if _account_can_send(candidate):
-            account = candidate
-            break
-
+    account = _pick_account(enrolled_lead, campaign)
     if not account:
-        print(f'[Scheduler] All accounts at daily cap for user {campaign.user_id} — skipping send')
+        print(f'[Scheduler] No available account for user {campaign.user_id} — skipping send')
         return
 
     lead = enrolled_lead.lead
     success, error = send_email(account, lead.email, subject, body, campaign.user)
-
     log = SendLog(
         enrolled_lead_id=enrolled_lead.id,
         step_id=step.id,

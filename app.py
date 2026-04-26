@@ -99,6 +99,7 @@ def create_app():
             'ALTER TABLE email_accounts ADD COLUMN imap_host VARCHAR(255)',
             'ALTER TABLE email_accounts ADD COLUMN imap_port INTEGER DEFAULT 993',
             'ALTER TABLE email_accounts ADD COLUMN imap_password_encrypted TEXT',
+            'ALTER TABLE enrolled_leads ADD COLUMN from_account_id INTEGER REFERENCES email_accounts(id)',
         ]:
             try:
                 with db.engine.connect() as conn:

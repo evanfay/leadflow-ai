@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Pre-load Email Drafts — LeadFlow AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Pre-load Email Drafts</h1>
+    <p class="page-subtitle">Write emails in bulk now — LeadFlow drips them out automatically at your daily limit</p>
+  </div>
+  <a href="{{ url_for('leads.pool') }}" class="btn btn-ghost">
+    <i data-lucide="arrow-left"></i> Back to Leads
+  </a>
+</div>
+
+<!-- Step 1: Pick campaign + batch size -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header">
+    <h2 class="card-title">1. Choose campaign and batch size</h2>
+  </div>
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('leads.pre_load') }}" style="display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-end;">
+      <div>
+        <label class="form-label">Campaign</label>
+        <select name="campaign_id" class="form-control" style="min-width:220px;" required>
+          <option value="">— Select campaign —</option>
+          {% for c in campaigns %}
+          <option value="{{ c.id }}" {% if c.id|string == selected_campaign_id %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">How many emails to pre-load</label>
+        <input type="number" name="limit" class="form-control" value="{{ limit }}" min="1" max="500" style="width:100px;">
+      </div>
+      <button type="submit" class="btn btn-primary">
+        <i data-lucide="list"></i> Load Leads
+      </button>
+    </form>
+
+    {% if selected_campaign_id and not slots %}
+    <div class="empty-state" style="margin-top:1.5rem;">
+      <i data-lucide="check-circle" style="width:36px;height:36px;color:var(--accent-1);margin-bottom:0.5rem;"></i>
+      <p>No emails due right now for this campaign — all leads are either up to date or not yet due for their next touch.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if slots %}
+<!-- Step 2: Fill in emails -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">2. Write the emails</h2>
+      <p class="card-subtitle">
+        {{ slots|length }} email{{ 's' if slots|length != 1 }} ready to fill in.
+        Use the template as your AI prompt — paste the response back in the body field.
+        Blank rows are skipped. The scheduler will drip these out automatically.
+      </p>
+    </div>
+    <div style="display:flex; gap:0.5rem;">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="expandAll()">Expand all</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="collapseAll()">Collapse all</button>
+    </div>
+  </div>
+  <div class="card-body" style="padding:0;">
+    <form method="POST" action="{{ url_for('leads.pre_load') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+      {% for slot in slots %}
+      <div class="preload-row" id="row-{{ loop.index }}">
+        <div class="preload-row-header" onclick="toggleRow({{ loop.index }})">
+          <div style="display:flex; align-items:center; gap:0.75rem; flex:1;">
+            <div class="preload-num">{{ loop.index }}</div>
+            <div>
+              <strong>{{ slot.lead_name }}</strong>
+              {% if slot.company %}<span style="color:var(--text-muted);"> · {{ slot.company }}</span>{% endif %}
+              <span style="color:var(--text-muted); font-size:0.8rem;"> · {{ slot.email }}</span>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span class="badge badge-gray" style="font-size:0.72rem;">{{ slot.touch }}</span>
+            <div class="preload-status" id="status-{{ loop.index }}" style="display:none;">
+              <span class="badge badge-green" style="font-size:0.72rem;">Draft ready</span>
+            </div>
+            <i data-lucide="chevron-down" class="preload-chevron" id="chevron-{{ loop.index }}" style="width:16px;height:16px;color:var(--text-muted);transition:transform 0.2s;"></i>
+          </div>
+        </div>
+
+        <div class="preload-row-body" id="body-{{ loop.index }}" style="display:none;">
+          <input type="hidden" name="enrolled_lead_id" value="{{ slot.enrolled_lead_id }}">
+          <input type="hidden" name="step_id" value="{{ slot.step_id }}">
+          <input type="hidden" name="template_id" value="{{ slot.template_id or '' }}">
+
+          <!-- Prompt (read-only) -->
+          <div style="margin-bottom:0.75rem;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.35rem;">
+              <label class="form-label" style="margin:0; font-size:0.8rem; color:var(--text-muted);">AI Prompt (copy this into ChatGPT / Claude)</label>
+              <button type="button" class="btn btn-sm btn-ghost" style="font-size:0.75rem; padding:0.2rem 0.5rem;"
+                      onclick="copyPrompt({{ loop.index }})">
+                <i data-lucide="copy" style="width:12px;height:12px;"></i> Copy prompt
+              </button>
+            </div>
+            <div class="preload-prompt" id="prompt-{{ loop.index }}">{{ slot.template_body }}</div>
+          </div>
+
+          <!-- Subject -->
+          <div style="margin-bottom:0.6rem;">
+            <label class="form-label" style="font-size:0.8rem;">Subject line</label>
+            <input type="text" name="subject" class="form-control" value="{{ slot.template_subject }}"
+                   placeholder="Subject line" oninput="markDirty({{ loop.index }})">
+          </div>
+
+          <!-- Body -->
+          <div>
+            <label class="form-label" style="font-size:0.8rem;">Email body <span style="color:var(--text-muted); font-weight:400;">(paste AI output here)</span></label>
+            <textarea name="body" class="form-control" rows="8"
+                      placeholder="Paste the AI-written email here…"
+                      oninput="markDirty({{ loop.index }})"></textarea>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      <div style="padding:1.25rem 1.5rem; border-top:1px solid var(--border); display:flex; align-items:center; gap:1rem;">
+        <button type="submit" class="btn btn-primary">
+          <i data-lucide="send"></i> Queue All Drafts
+        </button>
+        <span style="font-size:0.82rem; color:var(--text-muted);">
+          Only rows with body content will be saved. The scheduler sends them at your daily limit — no further action needed.
+        </span>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.preload-row {
+  border-bottom: 1px solid var(--border);
+}
+.preload-row:last-child { border-bottom: none; }
+.preload-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.preload-row-header:hover { background: var(--bg-alt); }
+.preload-row-body {
+  padding: 0 1.5rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+.preload-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bg-alt);
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.preload-row.has-content .preload-num {
+  background: var(--accent-1);
+  border-color: var(--accent-1);
+  color: #fff;
+}
+.preload-prompt {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.82rem;
+  color: var(--text-body);
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
+  line-height: 1.6;
+}
+</style>
+
+<script>
+function toggleRow(i) {
+  const body = document.getElementById('body-' + i);
+  const chevron = document.getElementById('chevron-' + i);
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  chevron.style.transform = open ? '' : 'rotate(180deg)';
+}
+function expandAll() {
+  document.querySelectorAll('.preload-row-body').forEach((el, i) => {
+    el.style.display = '';
+    const chevron = document.getElementById('chevron-' + (i + 1));
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+  });
+}
+function collapseAll() {
+  document.querySelectorAll('.preload-row-body').forEach((el, i) => {
+    el.style.display = 'none';
+    const chevron = document.getElementById('chevron-' + (i + 1));
+    if (chevron) chevron.style.transform = '';
+  });
+}
+function copyPrompt(i) {
+  const el = document.getElementById('prompt-' + i);
+  navigator.clipboard.writeText(el.innerText).then(() => {
+    const btn = el.previousElementSibling.querySelector('button');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;"></i> Copied!';
+    lucide.createIcons();
+    setTimeout(() => { btn.innerHTML = orig; lucide.createIcons(); }, 1800);
+  });
+}
+function markDirty(i) {
+  const row = document.getElementById('row-' + i);
+  const status = document.getElementById('status-' + i);
+  const bodyEl = row.querySelector('textarea[name="body"]');
+  if (bodyEl && bodyEl.value.trim()) {
+    row.classList.add('has-content');
+    status.style.display = '';
+  } else {
+    row.classList.remove('has-content');
+    status.style.display = 'none';
+  }
+}
+</script>
+{% endblock %}

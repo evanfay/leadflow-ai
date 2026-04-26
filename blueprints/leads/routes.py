@@ -35,11 +35,13 @@ def pool():
 
     leads = query.order_by(Lead.created_at.desc()).all()
 
-    # Campaigns for bulk enroll dropdown
+    # Campaigns and email accounts for bulk enroll
+    from models import EmailAccount
     campaigns = Campaign.query.filter_by(user_id=current_user.id).order_by(Campaign.name).all()
+    email_accounts = EmailAccount.query.filter_by(user_id=current_user.id, active=True).order_by(EmailAccount.email_address).all()
 
     return render_template('leads/pool.html', leads=leads, campaigns=campaigns,
-                           q=q, status_filter=status_filter)
+                           email_accounts=email_accounts, q=q, status_filter=status_filter)
 
 
 def _upload_tmp_path(user_id, upload_id):
@@ -676,11 +678,14 @@ def bulk_enroll():
         campaign = Campaign.query.filter_by(id=int(campaign_id), user_id=current_user.id).first_or_404()
 
     # start_step: how many touches have already been sent outside LeadFlow
-    # 0 = fresh, 1 = already sent touch 1, 2 = sent touches 1+2, etc.
     try:
         start_step = max(0, int(request.form.get('start_step', 0)))
     except (ValueError, TypeError):
         start_step = 0
+
+    # Pinned sending account
+    from_account_id_raw = request.form.get('from_account_id', '').strip()
+    from_account_id = int(from_account_id_raw) if from_account_id_raw.isdigit() else None
 
     enrolled = 0
     skipped = 0
@@ -697,6 +702,7 @@ def bulk_enroll():
             lead_id=lead.id,
             status=EnrolledStatus.ACTIVE,
             current_step=start_step,
+            from_account_id=from_account_id,
         )
         db.session.add(el)
         enrolled += 1
@@ -704,4 +710,115 @@ def bulk_enroll():
     db.session.commit()
     step_msg = f' (starting at touch {start_step + 1})' if start_step > 0 else ''
     flash(f'Enrolled {enrolled} leads in "{campaign.name}"{step_msg}. {skipped} already enrolled.', 'success')
+    return redirect(url_for('leads.pool'))
+
+
+@leads_bp.route('/pre-load', methods=['GET', 'POST'])
+@login_required
+def pre_load():
+    """Batch pre-load email drafts for non-API-key users."""
+    from models import EmailAccount, Sequence, SequenceStep, StepTemplate, Template
+    campaigns = Campaign.query.filter_by(user_id=current_user.id).order_by(Campaign.name).all()
+
+    if request.method == 'GET':
+        campaign_id = request.args.get('campaign_id', '')
+        try:
+            limit = max(1, min(500, int(request.args.get('limit', 50))))
+        except (ValueError, TypeError):
+            limit = 50
+
+        slots = []
+        if campaign_id:
+            campaign = Campaign.query.filter_by(id=int(campaign_id), user_id=current_user.id).first_or_404()
+            if campaign.sequence_id:
+                from datetime import date, timedelta
+                import random
+                sequence = campaign.sequence
+                steps = sorted(sequence.steps.all(), key=lambda s: s.day_offset)
+
+                active_leads = EnrolledLead.query.filter_by(
+                    campaign_id=campaign.id, status=EnrolledStatus.ACTIVE
+                ).all()
+
+                today = date.today()
+                for el in active_leads:
+                    if len(slots) >= limit:
+                        break
+                    lead = el.lead
+                    for step in steps:
+                        jitter = random.randint(-1, 1)
+                        due_date = el.enrolled_at.date() + timedelta(days=step.day_offset + jitter)
+                        if today < due_date:
+                            continue
+                        if step.channel != 'Email':
+                            continue
+                        existing = SendLog.query.filter_by(
+                            enrolled_lead_id=el.id, step_id=step.id
+                        ).first()
+                        if existing:
+                            continue
+                        # Build prompt
+                        step_templates = [st for st in step.step_templates.all() if st.is_active]
+                        if step_templates:
+                            tmpl = step_templates[0].template
+                        else:
+                            tmpl = Template.query.filter_by(
+                                touch_type=step.template_slot, is_builtin=True
+                            ).first()
+                        if not tmpl:
+                            continue
+                        slots.append({
+                            'enrolled_lead_id': el.id,
+                            'step_id': step.id,
+                            'template_id': tmpl.id if tmpl else None,
+                            'lead_name': f'{lead.first_name or ""} {lead.last_name or ""}'.strip() or lead.email,
+                            'company': lead.company or '',
+                            'email': lead.email,
+                            'touch': step.template_slot.replace('_', ' ').title(),
+                            'template_subject': (tmpl.subject or '').replace('{{first_name}}', lead.first_name or '').replace('{{company}}', lead.company or ''),
+                            'template_body': (tmpl.body or '').replace('{{first_name}}', lead.first_name or '').replace('{{company}}', lead.company or ''),
+                        })
+                        break  # one pending step per lead
+
+        return render_template('leads/pre_load.html',
+                               campaigns=campaigns,
+                               selected_campaign_id=campaign_id,
+                               limit=limit,
+                               slots=slots)
+
+    # POST — save the filled drafts
+    enrolled_lead_ids = request.form.getlist('enrolled_lead_id')
+    step_ids = request.form.getlist('step_id')
+    template_ids = request.form.getlist('template_id')
+    subjects = request.form.getlist('subject')
+    bodies = request.form.getlist('body')
+
+    saved = 0
+    for i, el_id in enumerate(enrolled_lead_ids):
+        body_text = bodies[i].strip() if i < len(bodies) else ''
+        subject_text = subjects[i].strip() if i < len(subjects) else ''
+        if not body_text:
+            continue  # skip blanks
+        el = EnrolledLead.query.filter_by(id=int(el_id), status=EnrolledStatus.ACTIVE).first()
+        if not el or el.lead.user_id != current_user.id:
+            continue
+        step_id = int(step_ids[i]) if i < len(step_ids) else None
+        tmpl_id = int(template_ids[i]) if i < len(template_ids) and template_ids[i] else None
+        existing = SendLog.query.filter_by(enrolled_lead_id=el.id, step_id=step_id).first()
+        if existing:
+            continue
+        draft = SendLog(
+            enrolled_lead_id=el.id,
+            step_id=step_id,
+            template_id=tmpl_id,
+            variant_label='A',
+            subject=subject_text,
+            body_snippet=body_text[:4000],
+            status='queued',
+        )
+        db.session.add(draft)
+        saved += 1
+
+    db.session.commit()
+    flash(f'{saved} email drafts queued — the scheduler will send them at your daily rate automatically.', 'success')
     return redirect(url_for('leads.pool'))

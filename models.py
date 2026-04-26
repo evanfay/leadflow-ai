@@ -261,6 +261,8 @@ class EnrolledLead(db.Model):
     engagement_score = db.Column(db.Integer, default=0)
     paused_reason = db.Column(db.String(500), default='')
     resume_at = db.Column(db.DateTime, nullable=True)
+    # Pinned sending account — future touches always come from this address
+    from_account_id = db.Column(db.Integer, db.ForeignKey('email_accounts.id'), nullable=True)
 
     send_logs = db.relationship('SendLog', backref='enrolled_lead', lazy='dynamic',
                                  cascade='all, delete-orphan')
