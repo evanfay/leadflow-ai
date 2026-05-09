@@ -96,12 +96,84 @@
   <!-- OVERVIEW TAB -->
   {% if tab == 'overview' %}
   <div class="overview-layout">
-    <!-- Sequence Timeline -->
-    {% if campaign.sequence %}
+    <!-- Sequence + Settings Card -->
     <div class="card">
       <div class="card-header">
-        <h2 class="card-title">Sequence: {{ campaign.sequence.name }}</h2>
+        <h2 class="card-title">
+          {% if campaign.sequence %}
+            <i data-lucide="git-branch" style="width:16px;height:16px;"></i>
+            Sequence: {{ campaign.sequence.name }}
+          {% else %}
+            <i data-lucide="git-branch" style="width:16px;height:16px; color:var(--text-muted);"></i>
+            No sequence assigned
+          {% endif %}
+        </h2>
+        <button type="button" class="btn btn-sm btn-ghost" onclick="toggleCampaignSettings()">
+          <i data-lucide="settings-2"></i> Settings
+        </button>
       </div>
+
+      <!-- Settings panel (hidden by default) -->
+      <div id="campaign-settings-panel" style="display:none; border-bottom:1px solid var(--border);">
+        <form method="POST" action="{{ url_for('campaigns.update_settings', campaign_id=campaign.id) }}"
+              style="padding:1.25rem 1.5rem;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.25rem; margin-bottom:1.25rem;">
+
+            <div>
+              <label class="form-label">Sequence</label>
+              <select name="sequence_id" class="form-control">
+                <option value="">— None (manual only) —</option>
+                {% for seq in sequences %}
+                <option value="{{ seq.id }}" {% if campaign.sequence_id == seq.id %}selected{% endif %}>
+                  {{ seq.name }} ({{ seq.email_step_count }} email steps, {{ seq.total_duration }}d)
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-hint">
+                Defines the send schedule — day 0, day 3, day 7, etc. Without a sequence the scheduler won't send anything automatically.
+              </div>
+            </div>
+
+            <div>
+              <label class="form-label">Sending mode</label>
+              <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.25rem;">
+                <label style="display:flex; align-items:flex-start; gap:0.6rem; cursor:pointer; font-size:0.875rem;">
+                  <input type="radio" name="content_mode" value="auto"
+                         {% if campaign.content_mode == 'auto' %}checked{% endif %}
+                         style="accent-color:var(--accent-1); margin-top:2px;">
+                  <div>
+                    <strong>Auto</strong> — AI writes and sends each email automatically on schedule.
+                    <span style="color:var(--text-muted);">Requires Anthropic API key in Profile.</span>
+                  </div>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:0.6rem; cursor:pointer; font-size:0.875rem;">
+                  <input type="radio" name="content_mode" value="review"
+                         {% if campaign.content_mode == 'review' %}checked{% endif %}
+                         style="accent-color:var(--accent-1); margin-top:2px;">
+                  <div>
+                    <strong>Review</strong> — AI drafts each email; you approve before it sends.
+                  </div>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:0.6rem; cursor:pointer; font-size:0.875rem;">
+                  <input type="radio" name="content_mode" value="manual"
+                         {% if campaign.content_mode == 'manual' %}checked{% endif %}
+                         style="accent-color:var(--accent-1); margin-top:2px;">
+                  <div>
+                    <strong>Manual</strong> — Creates a task reminder each day; you write and send yourself.
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:0.75rem;">
+            <button type="submit" class="btn btn-primary btn-sm">Save Settings</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="toggleCampaignSettings()">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      {% if campaign.sequence %}
       <div class="card-body">
         <div class="sequence-timeline">
           {% for step in campaign.sequence.steps.order_by('day_offset') %}
@@ -128,8 +200,23 @@
           {% endfor %}
         </div>
       </div>
+      {% else %}
+      <div class="card-body">
+        <div class="empty-state" style="padding:1.5rem 0;">
+          <i data-lucide="git-branch" style="width:36px;height:36px;color:var(--text-muted);margin-bottom:0.5rem;"></i>
+          <p style="margin-bottom:0.75rem;">No sequence assigned — the scheduler won't send anything automatically.</p>
+          <button type="button" class="btn btn-primary btn-sm" onclick="toggleCampaignSettings()">
+            <i data-lucide="plus"></i> Assign a Sequence
+          </button>
+          {% if not sequences %}
+          <p style="margin-top:0.75rem; font-size:0.82rem; color:var(--text-muted);">
+            No sequences exist yet. <a href="{{ url_for('sequences.index') }}">Create one in Sequences →</a>
+          </p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
     </div>
-    {% endif %}
 
     <!-- Enroll Leads -->
     <div class="card">
@@ -430,6 +517,11 @@
 
 {% block scripts %}
 <script>
+function toggleCampaignSettings() {
+  const panel = document.getElementById('campaign-settings-panel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
+}
+
 function openEditDraft(draftId, subject, body) {
   document.getElementById('edit-subject').value = subject;
   document.getElementById('edit-body').value = body;

@@ -99,6 +99,11 @@ def detail(campaign_id):
 
     tab = request.args.get('tab', 'overview')
 
+    from models import Sequence
+    sequences = Sequence.query.filter(
+        (Sequence.user_id == current_user.id) | (Sequence.is_builtin == True)
+    ).order_by(Sequence.name).all()
+
     return render_template(
         'campaigns/detail.html',
         campaign=campaign,
@@ -109,6 +114,7 @@ def detail(campaign_id):
         total_sent=total_sent,
         tab=tab,
         status_filter=status_filter,
+        sequences=sequences,
     )
 
 
@@ -129,6 +135,26 @@ def resume_campaign(campaign_id):
     campaign.status = CampaignStatus.ACTIVE
     db.session.commit()
     flash(f'Campaign "{campaign.name}" resumed.', 'success')
+    return redirect(url_for('campaigns.detail', campaign_id=campaign_id))
+
+
+@campaigns_bp.route('/<int:campaign_id>/settings', methods=['POST'])
+@login_required
+def update_settings(campaign_id):
+    campaign = Campaign.query.filter_by(id=campaign_id, user_id=current_user.id).first_or_404()
+
+    sequence_id_raw = request.form.get('sequence_id', '').strip()
+    campaign.sequence_id = int(sequence_id_raw) if sequence_id_raw.isdigit() else None
+
+    content_mode = request.form.get('content_mode', 'review')
+    if content_mode not in ('auto', 'review', 'manual'):
+        content_mode = 'review'
+    campaign.content_mode = content_mode
+
+    db.session.commit()
+
+    seq_name = campaign.sequence.name if campaign.sequence else 'none'
+    flash(f'Campaign updated — sequence: {seq_name}, mode: {content_mode}.', 'success')
     return redirect(url_for('campaigns.detail', campaign_id=campaign_id))
 
 
