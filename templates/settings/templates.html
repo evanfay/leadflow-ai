@@ -5,39 +5,18 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Email Templates</h1>
-    <p class="page-subtitle">Built-in and custom templates for your sequences</p>
+    <p class="page-subtitle">Reusable templates for your sequences — built-in and custom</p>
   </div>
   <button class="btn btn-primary" onclick="document.getElementById('create-modal').style.display='flex'">
     <i data-lucide="plus"></i> New Template
   </button>
 </div>
 
-<!-- Settings Nav -->
-<div class="settings-nav">
-  <a href="{{ url_for('settings.index') }}" class="settings-nav-item">
-    <i data-lucide="sliders"></i> General
-  </a>
-  <a href="{{ url_for('settings.email_accounts') }}" class="settings-nav-item">
-    <i data-lucide="mail"></i> Email Accounts
-  </a>
-  <a href="{{ url_for('settings.templates') }}" class="settings-nav-item active">
-    <i data-lucide="file-text"></i> Templates
-  </a>
-  <a href="{{ url_for('settings.profile') }}" class="settings-nav-item">
-    <i data-lucide="user"></i> Profile
-  </a>
-  {% if current_user.is_admin %}
-  <a href="{{ url_for('auth.admin_users') }}" class="settings-nav-item">
-    <i data-lucide="users"></i> Users
-  </a>
-  {% endif %}
-</div>
-
 <!-- Built-in Templates -->
 <div style="margin-bottom:2rem;">
   <h2 class="section-heading">
     <i data-lucide="star" style="width:16px;height:16px;color:var(--accent-1);"></i>
-    Small Axe Playbook (Built-in)
+    Built-in Templates
   </h2>
   <div class="template-grid">
     {% for t in builtin %}
@@ -113,7 +92,7 @@
 
 <!-- Create Template Modal -->
 <div class="modal-overlay" id="create-modal" style="display:none;">
-  <div class="modal" style="max-width:640px;">
+  <div class="modal" style="max-width:720px;">
     <div class="modal-header">
       <h3>New Template</h3>
       <button class="modal-close" onclick="document.getElementById('create-modal').style.display='none'">
@@ -123,42 +102,93 @@
     <form method="POST" action="{{ url_for('settings.create_template') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
       <div class="modal-body">
+
         <div class="form-row">
           <div class="form-group" style="flex:2;">
             <label class="form-label">Template Name <span class="required">*</span></label>
-            <input type="text" name="name" class="form-control" placeholder="e.g. My Signal Observation" required>
+            <input type="text" name="name" class="form-control" placeholder="e.g. Opener — SaaS Companies" required>
           </div>
           <div class="form-group" style="flex:1;">
             <label class="form-label">Touch Type <span class="required">*</span></label>
             <select name="touch_type" class="form-control" required>
               {% for val, label in [
-                ('observation','Signal Observation'), ('hypothesis','Hypothesis'),
-                ('proof','Proof'), ('soft_close','Soft Close'), ('breakup','Breakup'),
-                ('linkedin_connect','LinkedIn Connect'), ('linkedin_dm','LinkedIn DM'),
-                ('voicemail','Voicemail'), ('live_call','Live Call'),
-                ('link_clicked','Link Clicked'), ('reply_received','Reply'),
-                ('out_of_office','OOO'), ('not_now','Not Now'),
+                ('opener',      'Opener (1st email)'),
+                ('observation', 'Opening — Signal Observation'),
+                ('hypothesis',  'Follow-up — Hypothesis'),
+                ('proof',       'Follow-up — Proof / Case Study'),
+                ('soft_close',  'Soft Close'),
+                ('breakup',     'Breakup / Final Touch'),
+                ('linkedin_connect', 'LinkedIn Connect'),
+                ('linkedin_dm',      'LinkedIn DM'),
+                ('voicemail',        'Voicemail'),
+                ('live_call',        'Live Call'),
+                ('link_clicked',     'Trigger — Link Clicked'),
+                ('reply_received',   'Trigger — Reply Received'),
+                ('out_of_office',    'Trigger — Out of Office'),
+                ('not_now',          'Trigger — Not Now / Later'),
               ] %}
               <option value="{{ val }}">{{ label }}</option>
               {% endfor %}
             </select>
           </div>
         </div>
+
+        <!-- Variable reference card -->
+        <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:0.875rem 1rem; margin-bottom:1rem;">
+          <div style="font-size:0.78rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.6rem;">
+            How to write dynamic &amp; personalized content
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; font-size:0.82rem;">
+            <div>
+              <div style="font-weight:600; margin-bottom:0.3rem;">Pull in lead data automatically</div>
+              <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                <span><code>{{first_name}}</code> — lead's first name</span>
+                <span><code>{{last_name}}</code> — lead's last name</span>
+                <span><code>{{company}}</code> — company name</span>
+                <span><code>{{signal_1}}</code> — first signal / trigger</span>
+                <span><code>{{signal_2}}</code> — second signal</span>
+                <span><code>{{calendly_link}}</code> — your booking link</span>
+              </div>
+            </div>
+            <div>
+              <div style="font-weight:600; margin-bottom:0.3rem;">Tell the AI what to write</div>
+              <div style="color:var(--text-muted); margin-bottom:0.4rem;">
+                Put instructions in <strong>[square brackets]</strong> — the AI replaces them with personalized content.
+              </div>
+              <div style="display:flex; flex-direction:column; gap:0.3rem; font-style:italic; color:var(--text-body);">
+                <span>[write a one-sentence observation about {{company}}]</span>
+                <span>[mention a relevant pain point for their industry]</span>
+                <span>[brief case study result — 1 sentence]</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label class="form-label">Subject Line</label>
           <input type="text" name="subject" class="form-control"
-                 placeholder="Use {{first_name}}, {{company}} as placeholders">
+                 placeholder="e.g.  quick thought on {{company}}  or  [write a short curiosity-gap subject line]">
+          <div class="form-hint">Use <code>{{company}}</code> / <code>{{first_name}}</code> for personalization, or put <code>[AI instruction]</code> to let it write one.</div>
         </div>
+
         <div class="form-group">
           <label class="form-label">Body <span class="required">*</span></label>
-          <textarea name="body" class="form-control" rows="10" required
-                    placeholder="Hi {{first_name}},&#10;&#10;[your email body here]&#10;&#10;Best,&#10;{{your_name}}"></textarea>
+          <textarea name="body" class="form-control" rows="11" required
+                    placeholder="Hi {{first_name}},
+
+[Write a 1-sentence observation about something specific happening at {{company}} — growth, hiring, product launch, etc.]
+
+Most companies in this situation find it hard to [relevant pain point]. We helped [similar company type] [specific result — keep it short].
+
+Worth a quick 15 min? [calendly_link]
+
+Best,
+[Your name]"></textarea>
           <div class="form-hint">
-            Available placeholders: <code>{{first_name}}</code>, <code>{{last_name}}</code>,
-            <code>{{company}}</code>, <code>{{signal_1}}</code>, <code>{{signal_2}}</code>,
-            <code>{{calendly_link}}</code>
+            Mix real data (<code>{{company}}</code>) with AI instructions (<code>[write a personalized hook]</code>) freely — the AI fills in the brackets and keeps the fixed text as-is.
           </div>
         </div>
+
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('create-modal').style.display='none'">Cancel</button>
@@ -189,10 +219,20 @@
             <label class="form-label">Touch Type</label>
             <select name="touch_type" id="edit-touch-type" class="form-control">
               {% for val, label in [
-                ('observation','Signal Observation'), ('hypothesis','Hypothesis'),
-                ('proof','Proof'), ('soft_close','Soft Close'), ('breakup','Breakup'),
-                ('linkedin_connect','LinkedIn Connect'), ('linkedin_dm','LinkedIn DM'),
-                ('voicemail','Voicemail'), ('live_call','Live Call'),
+                ('opener',      'Opener (1st email)'),
+                ('observation', 'Opening — Signal Observation'),
+                ('hypothesis',  'Follow-up — Hypothesis'),
+                ('proof',       'Follow-up — Proof / Case Study'),
+                ('soft_close',  'Soft Close'),
+                ('breakup',     'Breakup / Final Touch'),
+                ('linkedin_connect', 'LinkedIn Connect'),
+                ('linkedin_dm',      'LinkedIn DM'),
+                ('voicemail',        'Voicemail'),
+                ('live_call',        'Live Call'),
+                ('link_clicked',     'Trigger — Link Clicked'),
+                ('reply_received',   'Trigger — Reply Received'),
+                ('out_of_office',    'Trigger — Out of Office'),
+                ('not_now',          'Trigger — Not Now / Later'),
               ] %}
               <option value="{{ val }}">{{ label }}</option>
               {% endfor %}

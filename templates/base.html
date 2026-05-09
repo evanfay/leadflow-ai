@@ -57,6 +57,10 @@
       <i data-lucide="git-branch" class="nav-icon"></i>
       <span>Sequences</span>
     </a>
+    <a href="{{ url_for('settings.templates') }}" class="nav-item {% if request.endpoint == 'settings.templates' %}active{% endif %}">
+      <i data-lucide="file-text" class="nav-icon"></i>
+      <span>Templates</span>
+    </a>
     <a href="{{ url_for('scraper.index') }}" class="nav-item {% if request.blueprint == 'scraper' %}active{% endif %}">
       <i data-lucide="search" class="nav-icon"></i>
       <span>Scraper</span>
@@ -65,7 +69,7 @@
       <i data-lucide="shield-check" class="nav-icon"></i>
       <span>Deliverability</span>
     </a>
-    <a href="{{ url_for('settings.index') }}" class="nav-item {% if request.blueprint == 'settings' and request.endpoint != 'settings.deliverability' %}active{% endif %}">
+    <a href="{{ url_for('settings.index') }}" class="nav-item {% if request.blueprint == 'settings' and request.endpoint not in ('settings.deliverability', 'settings.templates') %}active{% endif %}">
       <i data-lucide="settings" class="nav-icon"></i>
       <span>Settings</span>
     </a>

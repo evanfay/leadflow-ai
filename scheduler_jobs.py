@@ -243,11 +243,12 @@ def _queue_email_step(enrolled_lead, step, campaign):
 
 def _humanize_touch(slot):
     labels = {
-        'observation': 'Opening Touch',
-        'hypothesis': 'Second Touch — Hypothesis',
-        'proof': 'Third Touch — Proof',
+        'opener': 'Opener — First Email',
+        'observation': 'Opening — Signal Observation',
+        'hypothesis': 'Follow-up — Hypothesis',
+        'proof': 'Follow-up — Proof / Case Study',
         'soft_close': 'Soft Close',
-        'breakup': 'Breakup Email',
+        'breakup': 'Breakup / Final Touch',
         'linkedin_connect': 'LinkedIn Connection',
         'linkedin_dm': 'LinkedIn DM',
         'voicemail': 'Voicemail',
