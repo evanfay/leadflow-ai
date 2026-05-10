@@ -101,16 +101,55 @@ def _account_can_send(account):
     return sent_today < cap
 
 
+# Ratio of follow-up emails to new first-touch emails in the daily send queue.
+# 2 means: for every 2 follow-ups sent, 1 new-lead opener is sent.
+# Adjust higher (e.g. 3) to protect more capacity for follow-ups,
+# or lower (e.g. 1) for a 50/50 split.
+FOLLOWUP_TO_NEW_RATIO = 2
+
+
+def _interleave_leads(active_leads, followup_ids):
+    """
+    Split active leads into follow-up and new-touch buckets, then interleave
+    them at a FOLLOWUP_TO_NEW_RATIO ratio so both always get capacity.
+
+    Example at ratio=2, cap=30: ~20 follow-ups, ~10 new touches per day.
+    When one bucket empties, the remaining capacity goes to the other — so
+    the cap is never wasted.
+    """
+    followups = [el for el in active_leads if el.id in followup_ids]
+    new_touches = [el for el in active_leads if el.id not in followup_ids]
+
+    # Sort each bucket: follow-ups by enrolled_at ascending (oldest = most overdue),
+    # new touches by enrolled_at ascending (FIFO — enrolled first, contacted first)
+    followups.sort(key=lambda el: el.enrolled_at or datetime.min)
+    new_touches.sort(key=lambda el: el.enrolled_at or datetime.min)
+
+    interleaved = []
+    fi = ni = 0
+    while fi < len(followups) or ni < len(new_touches):
+        for _ in range(FOLLOWUP_TO_NEW_RATIO):
+            if fi < len(followups):
+                interleaved.append(followups[fi])
+                fi += 1
+        if ni < len(new_touches):
+            interleaved.append(new_touches[ni])
+            ni += 1
+
+    return interleaved
+
+
 def send_due_emails(app):
     """Check enrolled leads for due email steps and send them.
 
-    Priority rule: leads that already have sent emails (follow-ups) are processed
-    before leads receiving their very first touch. This ensures follow-up relationships
-    are maintained even when the daily cap is tight.
+    Capacity split: leads are interleaved at FOLLOWUP_TO_NEW_RATIO so that
+    both follow-ups AND new first-touch emails get sent every day, regardless
+    of how large the existing pipeline grows. When one bucket empties, any
+    remaining capacity goes to the other bucket.
     """
     with app.app_context():
         from models import db, EnrolledLead, DoNotContact, EmailAccount, SendLog
-        from models import EnrolledStatus
+        from models import EnrolledStatus, SendStatus
 
         now = datetime.utcnow()
         # Only send on weekdays, during business hours (8am–11am or 1pm–4pm UTC)
@@ -122,29 +161,26 @@ def send_due_emails(app):
 
         active_leads = EnrolledLead.query.filter_by(status=EnrolledStatus.ACTIVE).all()
 
-        # ── Priority sort: follow-ups before first-touch ────────────────────
-        # Leads enrolled earlier are further in the sequence (more follow-ups due).
-        # current_step > 0 means they started mid-sequence (already contacted outside).
-        # Together these push follow-ups to the front of the queue.
-        def _priority_key(el):
-            # Higher current_step = further along = higher priority (lower sort value)
-            step_prio = -el.current_step if el.current_step else 0
-            # Older enrollment = more likely to be on a follow-up step
-            enrolled_ts = el.enrolled_at.timestamp() if el.enrolled_at else 0
-            return (step_prio, enrolled_ts)
+        # ── Identify which enrolled leads have already received ≥1 sent email ──
+        # One query; avoids N+1 per lead.
+        followup_ids = set(
+            row[0] for row in
+            db.session.query(SendLog.enrolled_lead_id)
+            .filter(SendLog.status == SendStatus.SENT)
+            .distinct()
+            .all()
+        )
 
-        active_leads.sort(key=_priority_key)
+        # ── Interleave follow-ups and new touches at the configured ratio ──────
+        active_leads = _interleave_leads(active_leads, followup_ids)
 
-        # ── Check if all accounts are already at cap — bail early ───────────
-        accounts = EmailAccount.query.filter(
-            EmailAccount.active == True
-        ).all()
+        # ── Early-exit helpers ─────────────────────────────────────────────────
+        accounts = EmailAccount.query.filter(EmailAccount.active == True).all()
 
         def _all_capped(user_id):
             user_accounts = [a for a in accounts if a.user_id == user_id]
             return bool(user_accounts) and all(not _account_can_send(a) for a in user_accounts)
 
-        # Cache per-user cap status to avoid hammering DB mid-loop
         user_capped_cache = {}
 
         for el in active_leads:
