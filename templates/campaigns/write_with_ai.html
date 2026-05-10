@@ -69,17 +69,6 @@
             </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">Max leads to include</label>
-            <div style="display:flex; align-items:center; gap:0.75rem;">
-              <input type="number" name="limit" class="form-control" value="{{ limit }}"
-                     min="1" max="200" style="width:100px;">
-              <span style="font-size:0.82rem; color:var(--text-muted);">
-                Keep under 50 for best AI results
-              </span>
-            </div>
-          </div>
-
           <button type="submit" class="btn btn-primary" style="width:100%;">
             <i data-lucide="search"></i> Find Due Emails
           </button>
@@ -88,14 +77,32 @@
         {% if days_out %}
           {% if results %}
           <div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
+
+            {% if has_more %}
+            {# Multiple batches needed #}
+            <div class="alert-batch" style="margin-bottom:1rem;">
+              <div style="display:flex;align-items:flex-start;gap:0.6rem;">
+                <i data-lucide="layers" style="width:17px;height:17px;flex-shrink:0;margin-top:1px;"></i>
+                <div>
+                  <strong>{{ total_in_window }} emails due — split across {{ total_parts }} prompts for best quality.</strong><br>
+                  <span style="font-size:0.82rem;">
+                    This prompt covers <strong>Part 1 of {{ total_parts }}</strong>
+                    ({{ results|length }} of {{ total_in_window }} emails).
+                    After importing Part 1, come back and run the same search — the next
+                    {{ more_count }} email{{ 's' if more_count != 1 }} will automatically appear as Part 2.
+                  </span>
+                </div>
+              </div>
+            </div>
+            {% else %}
             <div class="alert-success" style="margin-bottom:1rem;">
               <i data-lucide="check-circle" style="width:16px;height:16px;flex-shrink:0;"></i>
-              <span>Found <strong>{{ results|length }}</strong> email{{ 's' if results|length != 1 }} ready to write
-              — {{ results|selectattr('touch_label', 'search', 'Opener|Opening') |list|length }} new openers,
-              {{ results|length - (results|selectattr('touch_label', 'search', 'Opener|Opening')|list|length) }} follow-ups.</span>
+              <span>Found <strong>{{ results|length }}</strong> email{{ 's' if results|length != 1 }} ready to write.</span>
             </div>
+            {% endif %}
+
             <button class="btn btn-primary" onclick="showStep(2)" style="width:100%;">
-              <i data-lucide="wand-2"></i> Generate Combined Prompt
+              <i data-lucide="wand-2"></i> Generate Combined Prompt{% if has_more %} — Part 1 of {{ total_parts }}{% endif %}
             </button>
           </div>
           {% else %}
@@ -113,8 +120,16 @@
     <!-- Right: lead preview -->
     <div class="card">
       <div class="card-header">
-        <h2 class="card-title"><i data-lucide="users" style="color:var(--accent-1);"></i> Leads in this batch</h2>
-        {% if results %}<span class="badge badge-orange">{{ results|length }}</span>{% endif %}
+        <h2 class="card-title"><i data-lucide="users" style="color:var(--accent-1);"></i>
+          {% if has_more %}Part 1 — Leads in this batch{% else %}Leads in this batch{% endif %}
+        </h2>
+        {% if results %}
+          {% if has_more %}
+          <span class="badge badge-orange">{{ results|length }} of {{ total_in_window }}</span>
+          {% else %}
+          <span class="badge badge-orange">{{ results|length }}</span>
+          {% endif %}
+        {% endif %}
       </div>
       <div class="card-body" style="padding:0; max-height:520px; overflow-y:auto;">
         {% if results %}
@@ -161,12 +176,32 @@
     </div>
     <div class="card-body">
 
-      <div class="tip-row" style="margin-bottom:1.25rem;">
+      <div class="tip-row" style="margin-bottom:1rem;">
         <div class="tip-chip"><i data-lucide="sparkles" style="width:13px;height:13px;"></i> ChatGPT</div>
         <div class="tip-chip"><i data-lucide="sparkles" style="width:13px;height:13px;"></i> Claude.ai</div>
         <div class="tip-chip"><i data-lucide="sparkles" style="width:13px;height:13px;"></i> Gemini</div>
         <span style="color:var(--text-muted);font-size:0.82rem;">— paste into any of these</span>
       </div>
+
+      {% if has_more %}
+      <div class="alert-batch" style="margin-bottom:1rem;">
+        <div style="display:flex;align-items:flex-start;gap:0.6rem;">
+          <i data-lucide="layers" style="width:16px;height:16px;flex-shrink:0;margin-top:1px;"></i>
+          <div>
+            <strong>Part 1 of {{ total_parts }} — {{ results|length }} emails</strong><br>
+            <span style="font-size:0.82rem;">
+              Start a <strong>new chat</strong> in your AI tool for each part. This gives the AI a clean slate
+              and keeps quality consistent across all {{ total_in_window }} emails.
+            </span>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div style="margin-bottom:1rem; padding:0.6rem 0.85rem; border-radius:var(--radius); background:var(--bg-alt); border:1px solid var(--border); font-size:0.82rem; color:var(--text-muted); display:flex; align-items:flex-start; gap:0.5rem;">
+        <i data-lucide="lightbulb" style="width:14px;height:14px;flex-shrink:0;margin-top:1px;color:var(--accent-1);"></i>
+        <span><strong>Tip:</strong> If you run this page again for a different date window, start a new chat in your AI tool for each prompt — this keeps quality high and avoids confusion between batches.</span>
+      </div>
+      {% endif %}
 
       <div style="position:relative;">
         <pre id="prompt-display" style="background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;font-size:0.78rem;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:420px;overflow-y:auto;font-family:monospace;">{{ prompt }}</pre>
@@ -179,7 +214,7 @@
       <div class="alert-info" style="margin-top:1.25rem;">
         <i data-lucide="info" style="width:16px;height:16px;flex-shrink:0;"></i>
         <div>
-          Paste the prompt into any AI chatbot. Copy the <strong>entire response</strong> — make sure it includes every
+          Paste the prompt into your AI chatbot. Copy the <strong>entire response</strong> — make sure it includes every
           <code>---LEAD:---</code> and <code>---END---</code> marker. Then come back here and click below.
         </div>
       </div>
@@ -272,6 +307,7 @@
 .alert-info    { display:flex; gap:0.6rem; align-items:flex-start; padding:0.75rem 1rem; border-radius:var(--radius); background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.25); color:#3730a3; font-size:0.85rem; }
 .alert-success { display:flex; gap:0.6rem; align-items:center; padding:0.65rem 1rem; border-radius:var(--radius); background:rgba(120,140,93,0.1); border:1px solid rgba(120,140,93,0.3); color:#3a5c28; font-size:0.85rem; }
 .alert-warning { display:flex; gap:0.6rem; align-items:center; padding:0.65rem 1rem; border-radius:var(--radius); background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); color:#92400e; font-size:0.85rem; }
+.alert-batch   { padding:0.75rem 1rem; border-radius:var(--radius); background:rgba(249,115,22,0.07); border:1px solid rgba(249,115,22,0.3); color:#7c2d12; font-size:0.85rem; }
 
 .radio-card { display:block; border:1.5px solid var(--border); border-radius:var(--radius); padding:0.85rem 1rem; cursor:pointer; transition:border-color 0.15s, background 0.15s; }
 .radio-card:hover { border-color:var(--accent-1); }

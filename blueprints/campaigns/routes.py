@@ -365,12 +365,18 @@ def _humanize_touch(slot):
     return labels.get(slot, slot.replace('_', ' ').title())
 
 
-def _find_due_leads(campaign, days_out, limit):
+# Max leads per AI prompt — above this quality starts to degrade
+AI_BATCH_SIZE = 40
+
+
+def _find_due_leads(campaign, days_out):
     """
-    Return up to `limit` enrolled leads whose next pending email step is due
-    within today + days_out days and has no existing SendLog for that step.
-    Each result dict includes all data needed to build the prompt and import.
+    Return ALL enrolled leads whose next pending email step is due within
+    today + days_out days and has no existing SendLog for that step.
+    Results are ordered oldest-enrollment-first (most overdue first).
+    Caller slices to AI_BATCH_SIZE for the actual prompt.
     """
+    import math
     from scheduler_jobs import _step_jitter
 
     if not campaign.sequence_id:
@@ -391,9 +397,6 @@ def _find_due_leads(campaign, days_out, limit):
 
     results = []
     for el in active_els:
-        if len(results) >= limit:
-            break
-
         lead = el.lead
         if lead.do_not_contact:
             continue
@@ -410,15 +413,14 @@ def _find_due_leads(campaign, days_out, limit):
             due_date = enrolled_date + timedelta(days=step.day_offset + jitter)
 
             if due_date > cutoff:
-                continue  # not due yet within the window
+                continue
 
             existing = SendLog.query.filter_by(
                 enrolled_lead_id=el.id, step_id=step.id
             ).first()
             if existing:
-                continue  # already has a log (sent/draft/queued)
+                continue
 
-            # Resolve template
             st = step.step_templates.filter_by(is_active=True).first()
             tmpl = st.template if st else Template.query.filter_by(
                 touch_type=step.template_slot, is_builtin=True
@@ -494,23 +496,32 @@ Write all {len(results)} emails now. Start immediately with the first ---LEAD:--
 @campaigns_bp.route('/<int:campaign_id>/write-with-ai', methods=['GET'])
 @login_required
 def write_with_ai(campaign_id):
+    import math
     campaign = Campaign.query.filter_by(id=campaign_id, user_id=current_user.id).first_or_404()
 
     days_out = request.args.get('days_out', '')
-    try:
-        limit = max(1, min(200, int(request.args.get('limit', 30))))
-    except (ValueError, TypeError):
-        limit = 30
 
-    results = []
-    lead_step_map = {}   # email -> {enrolled_lead_id, step_id, template_id}
+    all_results      = []
+    results          = []
+    lead_step_map    = {}
+    total_in_window  = 0
+    has_more         = False
+    more_count       = 0
+    total_parts      = 1
 
     if days_out:
         try:
             days_out_int = max(0, int(days_out))
         except (ValueError, TypeError):
             days_out_int = 1
-        results = _find_due_leads(campaign, days_out_int, limit)
+
+        all_results     = _find_due_leads(campaign, days_out_int)
+        total_in_window = len(all_results)
+        results         = all_results[:AI_BATCH_SIZE]
+        has_more        = total_in_window > AI_BATCH_SIZE
+        more_count      = max(0, total_in_window - AI_BATCH_SIZE)
+        total_parts     = math.ceil(total_in_window / AI_BATCH_SIZE) if total_in_window > 0 else 1
+
         lead_step_map = {
             r['email']: {
                 'enrolled_lead_id': r['enrolled_lead_id'],
@@ -525,7 +536,11 @@ def write_with_ai(campaign_id):
         campaign=campaign,
         results=results,
         days_out=days_out,
-        limit=limit,
+        total_in_window=total_in_window,
+        has_more=has_more,
+        more_count=more_count,
+        total_parts=total_parts,
+        batch_size=AI_BATCH_SIZE,
         lead_step_map_json=json.dumps(lead_step_map),
         prompt=_build_combined_prompt(results) if results else '',
     )
