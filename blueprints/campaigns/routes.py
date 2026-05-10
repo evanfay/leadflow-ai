@@ -493,6 +493,31 @@ Write all {len(results)} emails now. Start immediately with the first ---LEAD:--
     return prompt
 
 
+def _remaining_daily_capacity(user_id):
+    """
+    Return the number of emails the user can still send today across all active accounts.
+    Returns None if unlimited (no caps set).
+    """
+    from models import EmailAccount, SendStatus
+    from scheduler_jobs import _get_daily_cap
+    accounts = EmailAccount.query.filter_by(user_id=user_id, active=True).all()
+    if not accounts:
+        return 0
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    total_remaining = 0
+    for acc in accounts:
+        cap = _get_daily_cap(acc)
+        if cap == float('inf'):
+            return None   # at least one account is unlimited
+        sent_today = SendLog.query.filter(
+            SendLog.from_account_id == acc.id,
+            SendLog.status == SendStatus.SENT,
+            SendLog.sent_at >= today_start,
+        ).count()
+        total_remaining += max(0, cap - sent_today)
+    return total_remaining
+
+
 @campaigns_bp.route('/<int:campaign_id>/write-with-ai', methods=['GET'])
 @login_required
 def write_with_ai(campaign_id):
@@ -508,6 +533,7 @@ def write_with_ai(campaign_id):
     has_more         = False
     more_count       = 0
     total_parts      = 1
+    daily_cap        = None   # None = unlimited
 
     if days_out:
         try:
@@ -515,7 +541,16 @@ def write_with_ai(campaign_id):
         except (ValueError, TypeError):
             days_out_int = 1
 
-        all_results     = _find_due_leads(campaign, days_out_int)
+        # All due leads in the window
+        raw_results = _find_due_leads(campaign, days_out_int)
+
+        # Cap to remaining daily send capacity so we don't write more than we can send
+        daily_cap = _remaining_daily_capacity(current_user.id)
+        if daily_cap is not None:
+            all_results = raw_results[:daily_cap]
+        else:
+            all_results = raw_results
+
         total_in_window = len(all_results)
         results         = all_results[:AI_BATCH_SIZE]
         has_more        = total_in_window > AI_BATCH_SIZE
@@ -541,6 +576,7 @@ def write_with_ai(campaign_id):
         more_count=more_count,
         total_parts=total_parts,
         batch_size=AI_BATCH_SIZE,
+        daily_cap=daily_cap,
         lead_step_map_json=json.dumps(lead_step_map),
         prompt=_build_combined_prompt(results) if results else '',
     )
