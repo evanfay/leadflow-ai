@@ -544,10 +544,11 @@ def write_with_ai(campaign_id):
         # All due leads in the window
         raw_results = _find_due_leads(campaign, days_out_int)
 
-        # Cap to remaining daily send capacity so we don't write more than we can send
+        # Cap to sendable capacity across the whole window (daily cap × days looked ahead)
         daily_cap = _remaining_daily_capacity(current_user.id)
         if daily_cap is not None:
-            all_results = raw_results[:daily_cap]
+            window_cap = daily_cap * max(1, days_out_int)
+            all_results = raw_results[:window_cap]
         else:
             all_results = raw_results
 
