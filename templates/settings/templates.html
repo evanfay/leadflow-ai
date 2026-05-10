@@ -134,31 +134,47 @@
         </div>
 
         <!-- Variable reference card -->
-        <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:0.875rem 1rem; margin-bottom:1rem;">
-          <div style="font-size:0.78rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.6rem;">
+        <div style="background:var(--bg-alt); border:1px solid var(--border); border-radius:var(--radius); padding:0.875rem 1rem; margin-bottom:1rem; font-size:0.82rem;">
+          <div style="font-size:0.75rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.75rem;">
             How to write dynamic &amp; personalized content
           </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; font-size:0.82rem;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+
+            <!-- Left: variables -->
             <div>
-              <div style="font-weight:600; margin-bottom:0.3rem;">Pull in lead data automatically</div>
-              <div style="display:flex; flex-direction:column; gap:0.25rem;">
-                <span><code>{{first_name}}</code> — lead's first name</span>
-                <span><code>{{last_name}}</code> — lead's last name</span>
-                <span><code>{{company}}</code> — company name</span>
-                <span><code>{{signal_1}}</code> — first signal / trigger</span>
-                <span><code>{{signal_2}}</code> — second signal</span>
-                <span><code>{{calendly_link}}</code> — your booking link</span>
+              <div style="font-weight:600; margin-bottom:0.25rem;">Personalization variables:</div>
+              <div style="color:var(--text-muted); font-size:0.78rem; margin-bottom:0.5rem;">Click a tag to copy it, then paste into the subject or body. Or click inside the body first, then click a tag to insert it directly.</div>
+              <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+                {% for code, desc in [
+                  ('{{first_name}}',    "first name"),
+                  ('{{last_name}}',     "last name"),
+                  ('{{company}}',       'company'),
+                  ('{{signal_1}}',      'signal 1'),
+                  ('{{signal_2}}',      'signal 2'),
+                  ('{{calendly_link}}', 'booking link'),
+                ] %}
+                <button type="button"
+                        onclick="insertVar(event, '{{ code }}')"
+                        style="font-family:monospace; font-size:0.78rem; background:var(--white); border:1px solid var(--border); border-radius:4px; padding:0.2rem 0.5rem; cursor:pointer; white-space:nowrap; color:var(--accent-1); display:inline-flex; align-items:center; gap:0.3rem;"
+                        title="{{ desc }} — click to copy or insert">
+                  {{ code }}
+                  <span style="font-family:var(--font-body); font-size:0.7rem; color:var(--text-muted); font-style:normal;">{{ desc }}</span>
+                </button>
+                {% endfor %}
               </div>
             </div>
+
+            <!-- Right: AI instructions -->
             <div>
-              <div style="font-weight:600; margin-bottom:0.3rem;">Tell the AI what to write</div>
-              <div style="color:var(--text-muted); margin-bottom:0.4rem;">
-                Put instructions in <strong>[square brackets]</strong> — the AI replaces them with personalized content.
+              <div style="font-weight:600; margin-bottom:0.5rem;">Use <code style="font-size:0.82rem;">[square brackets]</code> for AI instructions:</div>
+              <div style="color:var(--text-muted); font-size:0.8rem; margin-bottom:0.5rem;">
+                Anything in brackets is a prompt to the AI — it writes that part based on the lead's data. The rest of the email stays exactly as you typed it.
               </div>
-              <div style="display:flex; flex-direction:column; gap:0.3rem; font-style:italic; color:var(--text-body);">
-                <span>[write a one-sentence observation about {{company}}]</span>
-                <span>[mention a relevant pain point for their industry]</span>
-                <span>[brief case study result — 1 sentence]</span>
+              <div style="display:flex; flex-direction:column; gap:0.3rem; color:var(--text-body); font-style:italic; font-size:0.8rem;">
+                <span>[1-sentence observation about {{company}}]</span>
+                <span>[relevant pain point for their industry]</span>
+                <span>[one short case study result]</span>
+                <span>[write a curiosity-gap subject line]</span>
               </div>
             </div>
           </div>
@@ -284,6 +300,35 @@ Best,
 
 {% block scripts %}
 <script>
+function insertVar(event, code) {
+  // Try to insert into the focused textarea/input, otherwise copy to clipboard
+  const activeEl = document.activeElement;
+  if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT') && activeEl !== event.target) {
+    const start = activeEl.selectionStart;
+    const end = activeEl.selectionEnd;
+    const val = activeEl.value;
+    activeEl.value = val.slice(0, start) + code + val.slice(end);
+    activeEl.selectionStart = activeEl.selectionEnd = start + code.length;
+    activeEl.focus();
+  } else {
+    // Copy to clipboard and show brief feedback on the button
+    navigator.clipboard.writeText(code).then(() => {
+      const btn = event.currentTarget;
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.style.background = 'var(--accent-1)';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'var(--accent-1)';
+      setTimeout(() => {
+        btn.textContent = orig;
+        btn.style.background = '';
+        btn.style.color = '';
+        btn.style.borderColor = '';
+      }, 1200);
+    }).catch(() => {});
+  }
+}
+
 function editTemplate(id, name, touchType, subject, body) {
   document.getElementById('edit-name').value = name;
   document.getElementById('edit-touch-type').value = touchType;
