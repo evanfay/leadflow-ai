@@ -61,8 +61,43 @@
 
       <!-- Steps List -->
       <div id="steps-container">
+        {% macro touch_options(selected_val) %}
+          {% for val, label in [
+            ('opener','Opener (1st email)'),
+            ('observation','Signal Observation'),('hypothesis','Hypothesis'),
+            ('proof','Proof / Social'),('soft_close','Soft Close'),('breakup','Breakup'),
+            ('linkedin_connect','LinkedIn Connect'),('linkedin_dm','LinkedIn DM'),
+            ('voicemail','Voicemail Script'),('live_call','Live Call Script'),
+            ('link_clicked','Link Clicked Trigger'),('reply_received','Reply Trigger'),
+            ('out_of_office','OOO Trigger'),('not_now','Not Now Trigger'),
+          ] %}
+          <option value="{{ val }}" {% if selected_val == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        {% endmacro %}
+
+        {% macro template_options(selected_id, current_touch) %}
+          <option value="">— Auto-select by touch type —</option>
+          {% set matching = templates | selectattr('touch_type', 'equalto', current_touch) | list %}
+          {% set others   = templates | rejectattr('touch_type', 'equalto', current_touch) | list %}
+          {% if matching %}
+          <optgroup label="Matching ({{ current_touch.replace('_',' ') }})">
+            {% for t in matching %}
+            <option value="{{ t.id }}" {% if selected_id == t.id %}selected{% endif %}>{{ t.name }}{% if t.is_builtin %} ✦{% endif %}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if others %}
+          <optgroup label="All other templates">
+            {% for t in others %}
+            <option value="{{ t.id }}" {% if selected_id == t.id %}selected{% endif %}>{{ t.name }}{% if t.is_builtin %} ✦{% endif %}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+        {% endmacro %}
+
         {% if seq and steps %}
           {% for step in steps %}
+          {% set pinned_id = step_template_id_map.get(step.id) %}
           <div class="builder-step" data-index="{{ loop.index0 }}">
             <div class="builder-step-drag">
               <i data-lucide="grip-vertical" style="color:var(--text-muted);"></i>
@@ -85,17 +120,8 @@
                 </div>
                 <div style="flex:2;">
                   <label style="font-size:0.75rem; color:var(--text-muted);">Touch Type</label>
-                  <select name="step_slot" class="form-control">
-                    {% for val, label in [
-                      ('observation','Signal Observation'),('hypothesis','Hypothesis'),
-                      ('proof','Proof / Social'),('soft_close','Soft Close'),('breakup','Breakup'),
-                      ('linkedin_connect','LinkedIn Connect'),('linkedin_dm','LinkedIn DM'),
-                      ('voicemail','Voicemail Script'),('live_call','Live Call Script'),
-                      ('link_clicked','Link Clicked Trigger'),('reply_received','Reply Trigger'),
-                      ('out_of_office','OOO Trigger'),('not_now','Not Now Trigger'),
-                    ] %}
-                    <option value="{{ val }}" {% if step.template_slot == val %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
+                  <select name="step_slot" class="form-control touch-type-select" onchange="onTouchTypeChange(this)">
+                    {{ touch_options(step.template_slot) }}
                   </select>
                 </div>
                 <div style="display:flex; align-items:flex-end; gap:0.5rem;">
@@ -110,17 +136,28 @@
                   </button>
                 </div>
               </div>
+              <div class="builder-step-row" style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px dashed var(--border);">
+                <div style="flex:1; display:flex; align-items:center; gap:0.5rem;">
+                  <i data-lucide="file-text" style="width:14px;height:14px;color:var(--text-muted);flex-shrink:0;"></i>
+                  <div style="flex:1;">
+                    <label style="font-size:0.75rem; color:var(--text-muted);">Template</label>
+                    <select name="step_template_id" class="form-control template-select">
+                      {{ template_options(pinned_id, step.template_slot) }}
+                    </select>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           {% endfor %}
         {% else %}
           <!-- Default A-Account-style starter steps -->
           {% set default_steps = [
-            (1, 'Email', 'observation', True),
+            (1, 'Email', 'opener', True),
             (2, 'LinkedIn', 'linkedin_connect', False),
-            (4, 'Email', 'hypothesis', True),
+            (4, 'Email', 'observation', True),
             (7, 'Phone', 'voicemail', False),
-            (9, 'Email', 'proof', True),
+            (9, 'Email', 'hypothesis', True),
           ] %}
           {% for day, channel, slot, auto in default_steps %}
           <div class="builder-step" data-index="{{ loop.index0 }}">
@@ -142,15 +179,8 @@
                 </div>
                 <div style="flex:2;">
                   <label style="font-size:0.75rem; color:var(--text-muted);">Touch Type</label>
-                  <select name="step_slot" class="form-control">
-                    {% for val, label in [
-                      ('observation','Signal Observation'),('hypothesis','Hypothesis'),
-                      ('proof','Proof / Social'),('soft_close','Soft Close'),('breakup','Breakup'),
-                      ('linkedin_connect','LinkedIn Connect'),('linkedin_dm','LinkedIn DM'),
-                      ('voicemail','Voicemail Script'),('live_call','Live Call Script'),
-                    ] %}
-                    <option value="{{ val }}" {% if slot == val %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
+                  <select name="step_slot" class="form-control touch-type-select" onchange="onTouchTypeChange(this)">
+                    {{ touch_options(slot) }}
                   </select>
                 </div>
                 <div style="display:flex; align-items:flex-end; gap:0.5rem;">
@@ -163,6 +193,17 @@
                   <button type="button" class="btn btn-xs btn-danger-ghost" onclick="removeStep(this)">
                     <i data-lucide="x"></i>
                   </button>
+                </div>
+              </div>
+              <div class="builder-step-row" style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px dashed var(--border);">
+                <div style="flex:1; display:flex; align-items:center; gap:0.5rem;">
+                  <i data-lucide="file-text" style="width:14px;height:14px;color:var(--text-muted);flex-shrink:0;"></i>
+                  <div style="flex:1;">
+                    <label style="font-size:0.75rem; color:var(--text-muted);">Template</label>
+                    <select name="step_template_id" class="form-control template-select">
+                      {{ template_options(none, slot) }}
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -190,6 +231,7 @@
 {% block scripts %}
 <script>
 const TOUCH_TYPES = [
+  ['opener','Opener (1st email)'],
   ['observation','Signal Observation'],['hypothesis','Hypothesis'],
   ['proof','Proof / Social'],['soft_close','Soft Close'],['breakup','Breakup'],
   ['linkedin_connect','LinkedIn Connect'],['linkedin_dm','LinkedIn DM'],
@@ -197,6 +239,37 @@ const TOUCH_TYPES = [
   ['link_clicked','Link Clicked Trigger'],['reply_received','Reply Trigger'],
   ['out_of_office','OOO Trigger'],['not_now','Not Now Trigger'],
 ];
+
+// All templates available to user: [{id, name, touch_type, is_builtin}, ...]
+const ALL_TEMPLATES = [
+  {% for t in templates %}
+  { id: {{ t.id }}, name: {{ t.name|tojson }}, touch_type: {{ t.touch_type|tojson }}, is_builtin: {{ 'true' if t.is_builtin else 'false' }} },
+  {% endfor %}
+];
+
+function buildTemplateOptions(selectedId, currentTouchType) {
+  let html = '<option value="">— Auto-select by touch type —</option>';
+  // Matching templates first
+  const matching = ALL_TEMPLATES.filter(t => t.touch_type === currentTouchType);
+  const others = ALL_TEMPLATES.filter(t => t.touch_type !== currentTouchType);
+  if (matching.length) {
+    html += `<optgroup label="Matching (${currentTouchType.replace(/_/g,' ')})">`;
+    for (const t of matching) {
+      const sel = (selectedId && t.id == selectedId) ? ' selected' : '';
+      html += `<option value="${t.id}"${sel}>${t.name}${t.is_builtin ? ' ✦' : ''}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  if (others.length) {
+    html += '<optgroup label="All other templates">';
+    for (const t of others) {
+      const sel = (selectedId && t.id == selectedId) ? ' selected' : '';
+      html += `<option value="${t.id}"${sel}>${t.name}${t.is_builtin ? ' ✦' : ''}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  return html;
+}
 
 function getStepIndex() {
   return document.querySelectorAll('.builder-step').length;
@@ -218,6 +291,9 @@ function addStep(channel) {
     `<option value="${v}">${l}</option>`
   ).join('');
 
+  const defaultSlot = channel === 'LinkedIn' ? 'linkedin_connect' : channel === 'Phone' ? 'voicemail' : 'observation';
+  const templateOpts = buildTemplateOptions(null, defaultSlot);
+
   div.innerHTML = `
     <div class="builder-step-drag"><i data-lucide="grip-vertical" style="color:var(--text-muted);"></i></div>
     <div class="builder-step-dot ${dotClass}"></div>
@@ -237,7 +313,7 @@ function addStep(channel) {
         </div>
         <div style="flex:2;">
           <label style="font-size:0.75rem; color:var(--text-muted);">Touch Type</label>
-          <select name="step_slot" class="form-control">${touchOptions}</select>
+          <select name="step_slot" class="form-control touch-type-select" onchange="onTouchTypeChange(this)">${touchOptions}</select>
         </div>
         <div style="display:flex; align-items:flex-end; gap:0.5rem;">
           <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; white-space:nowrap; margin-bottom:0.1rem;">
@@ -248,6 +324,15 @@ function addStep(channel) {
           <button type="button" class="btn btn-xs btn-danger-ghost" onclick="removeStep(this)">
             <i data-lucide="x"></i>
           </button>
+        </div>
+      </div>
+      <div class="builder-step-row" style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px dashed var(--border);">
+        <div style="flex:1; display:flex; align-items:center; gap:0.5rem;">
+          <i data-lucide="file-text" style="width:14px;height:14px;color:var(--text-muted);flex-shrink:0;"></i>
+          <div style="flex:1;">
+            <label style="font-size:0.75rem; color:var(--text-muted);">Template</label>
+            <select name="step_template_id" class="form-control template-select">${templateOpts}</select>
+          </div>
         </div>
       </div>
     </div>`;
@@ -273,6 +358,14 @@ function updateStepStyle(select) {
   const step = select.closest('.builder-step');
   const dot = step.querySelector('.builder-step-dot');
   dot.className = `builder-step-dot dot-${select.value.toLowerCase()}`;
+}
+
+function onTouchTypeChange(touchSelect) {
+  const step = touchSelect.closest('.builder-step');
+  const templateSelect = step.querySelector('select[name="step_template_id"]');
+  if (!templateSelect) return;
+  const currentVal = templateSelect.value;
+  templateSelect.innerHTML = buildTemplateOptions(currentVal || null, touchSelect.value);
 }
 
 function updateEmptyState() {

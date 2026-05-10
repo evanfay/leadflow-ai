@@ -58,6 +58,15 @@
                     <span class="badge badge-gray" style="font-size:0.65rem; margin-left:0.25rem;">Manual task</span>
                     {% endif %}
                   </div>
+                  {% if step.id in step_template_map %}
+                  {% set t = step_template_map[step.id] %}
+                  <div style="margin-top:0.3rem; font-size:0.75rem; color:var(--accent-1); display:flex; align-items:center; gap:0.3rem;">
+                    <i data-lucide="file-text" style="width:12px;height:12px;"></i>
+                    {{ t.name }}{% if t.is_builtin %} <span style="color:var(--text-muted);">(built-in)</span>{% endif %}
+                  </div>
+                  {% else %}
+                  <div style="margin-top:0.3rem; font-size:0.75rem; color:var(--text-muted);">Auto-select template</div>
+                  {% endif %}
                 </div>
               </div>
             </div>
