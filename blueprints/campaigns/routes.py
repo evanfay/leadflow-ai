@@ -443,18 +443,19 @@ def _find_due_leads(campaign, days_out):
 
 
 def _build_combined_prompt(results):
-    """Build one prompt covering all leads, each labeled with their touch type."""
+    """Build one prompt covering all leads, each labeled with their touch type and full template."""
     lead_blocks = []
     for i, r in enumerate(results, 1):
         lead = r['lead']
-        lines = [
-            f'[Lead {i}]',
-            f'EMAIL TYPE: {r["touch_label"]}',
-        ]
+        lines = [f'[Lead {i}]']
+
+        # Full template — subject first, then body, preserving all formatting/structure
+        if r['template_subject']:
+            lines.append(f'SUBJECT TEMPLATE: {r["template_subject"]}')
         if r['template_body']:
-            # Inline the template condensed so the AI knows the style/structure
-            condensed = r['template_body'].replace('\n\n', ' | ').replace('\n', ' ')[:300]
-            lines.append(f'STYLE GUIDE: {condensed}')
+            lines.append(f'EMAIL TEMPLATE:\n{r["template_body"]}')
+
+        lines.append(f'---')
         lines.append(f'Email: {lead.email}')
         if lead.first_name:  lines.append(f'First Name: {lead.first_name}')
         if lead.last_name:   lines.append(f'Last Name: {lead.last_name}')
@@ -466,15 +467,17 @@ def _build_combined_prompt(results):
         lead_blocks.append('\n'.join(lines))
 
     prompt = f"""You are a B2B sales copywriter. Write one personalized email for EACH lead below.
-Each lead specifies their EMAIL TYPE — write exactly that type of email for that person.
+
+For each lead you are given:
+- SUBJECT TEMPLATE: the exact subject line format to follow
+- EMAIL TEMPLATE: the exact structure and tone to replicate — fill in the bracketed placeholders using the lead's data
 
 RULES:
-- Under 100 words per email
+- Follow the SUBJECT TEMPLATE and EMAIL TEMPLATE exactly — same structure, same sections, same length
+- Replace every {{placeholder}} or [bracketed instruction] with real, specific, personalized content
 - Plain text only — no bullet points, no HTML, no markdown
-- Conversational and human — not salesy or corporate
-- Personalize using the lead's name, company, title, and any signals
-- Use the STYLE GUIDE as a structural reference — do not copy it verbatim
 - Do not invent facts you don't have
+- Do not add sections or copy that aren't in the template
 
 OUTPUT FORMAT — use this exactly for every lead, no exceptions:
 
@@ -488,7 +491,7 @@ Write all {len(results)} emails now. Start immediately with the first ---LEAD:--
 
 {'=' * 60}
 
-""" + '\n\n'.join(lead_blocks)
+""" + ('\n' + '=' * 60 + '\n').join(lead_blocks)
 
     return prompt
 
