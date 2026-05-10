@@ -32,8 +32,8 @@
       </button>
     </form>
     {% endif %}
-    <a href="{{ url_for('leads.ai_prompt', campaign_id=campaign.id) }}" class="btn btn-ghost">
-      <i data-lucide="wand-2"></i> Generate AI Prompt
+    <a href="{{ url_for('campaigns.write_with_ai', campaign_id=campaign.id) }}" class="btn btn-primary">
+      <i data-lucide="wand-2"></i> Write Emails with AI
     </a>
     <a href="{{ url_for('campaigns.export_csv', campaign_id=campaign.id) }}" class="btn btn-ghost">
       <i data-lucide="download"></i> Export

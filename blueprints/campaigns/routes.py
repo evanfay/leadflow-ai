@@ -1,12 +1,15 @@
 import csv
 import io
-from datetime import datetime
+import json
+import re
+from datetime import datetime, date, timedelta
 from flask import render_template, request, redirect, url_for, flash, jsonify, Response
 from flask_login import login_required, current_user
 from . import campaigns_bp
 from extensions import db
 from models import (Campaign, Sequence, Lead, EnrolledLead, SendLog, ReplyLog,
-                    TaskQueue, CampaignStatus, EnrolledStatus, ContentMode, TaskStatus)
+                    TaskQueue, CampaignStatus, EnrolledStatus, ContentMode, TaskStatus,
+                    Template, DoNotContact, SendStatus)
 
 
 @campaigns_bp.route('/')
@@ -342,3 +345,301 @@ def export_csv(campaign_id):
         mimetype='text/csv',
         headers={'Content-Disposition': f'attachment; filename=campaign_{campaign_id}.csv'}
     )
+
+
+# ── Campaign AI Prompt Builder ────────────────────────────────────────────────
+
+def _humanize_touch(slot):
+    labels = {
+        'opener':       'Opener — First Email',
+        'observation':  'Opening Touch — Signal Observation',
+        'hypothesis':   'Follow-up #2 — Hypothesis',
+        'proof':        'Follow-up #3 — Proof / Case Study',
+        'soft_close':   'Soft Close',
+        'breakup':      'Breakup / Final Touch',
+        'not_now':      'Not Now Reply',
+        'link_clicked': 'Link Clicked Follow-up',
+        'reply_received': 'Reply Received Response',
+        'out_of_office':  'Out of Office Follow-up',
+    }
+    return labels.get(slot, slot.replace('_', ' ').title())
+
+
+def _find_due_leads(campaign, days_out, limit):
+    """
+    Return up to `limit` enrolled leads whose next pending email step is due
+    within today + days_out days and has no existing SendLog for that step.
+    Each result dict includes all data needed to build the prompt and import.
+    """
+    from scheduler_jobs import _step_jitter
+
+    if not campaign.sequence_id:
+        return []
+
+    today = date.today()
+    cutoff = today + timedelta(days=days_out)
+
+    email_steps = sorted(
+        [s for s in campaign.sequence.steps.all() if s.channel == 'Email'],
+        key=lambda s: s.day_offset
+    )
+
+    active_els = (EnrolledLead.query
+                  .filter_by(campaign_id=campaign.id, status=EnrolledStatus.ACTIVE)
+                  .order_by(EnrolledLead.enrolled_at)
+                  .all())
+
+    results = []
+    for el in active_els:
+        if len(results) >= limit:
+            break
+
+        lead = el.lead
+        if lead.do_not_contact:
+            continue
+        dnc = DoNotContact.query.filter_by(
+            user_id=campaign.user_id, email_address=lead.email
+        ).first()
+        if dnc:
+            continue
+
+        enrolled_date = el.enrolled_at.date() if el.enrolled_at else today
+
+        for step in email_steps:
+            jitter = _step_jitter(el.id, step.id)
+            due_date = enrolled_date + timedelta(days=step.day_offset + jitter)
+
+            if due_date > cutoff:
+                continue  # not due yet within the window
+
+            existing = SendLog.query.filter_by(
+                enrolled_lead_id=el.id, step_id=step.id
+            ).first()
+            if existing:
+                continue  # already has a log (sent/draft/queued)
+
+            # Resolve template
+            st = step.step_templates.filter_by(is_active=True).first()
+            tmpl = st.template if st else Template.query.filter_by(
+                touch_type=step.template_slot, is_builtin=True
+            ).first()
+
+            results.append({
+                'enrolled_lead_id': el.id,
+                'step_id':          step.id,
+                'template_id':      tmpl.id if tmpl else None,
+                'email':            lead.email,
+                'lead':             lead,
+                'touch_label':      _humanize_touch(step.template_slot),
+                'template_subject': tmpl.subject if tmpl else '',
+                'template_body':    tmpl.body    if tmpl else '',
+                'due_date':         due_date,
+            })
+            break  # one pending step per lead
+
+    return results
+
+
+def _build_combined_prompt(results):
+    """Build one prompt covering all leads, each labeled with their touch type."""
+    lead_blocks = []
+    for i, r in enumerate(results, 1):
+        lead = r['lead']
+        lines = [
+            f'[Lead {i}]',
+            f'EMAIL TYPE: {r["touch_label"]}',
+        ]
+        if r['template_body']:
+            # Inline the template condensed so the AI knows the style/structure
+            condensed = r['template_body'].replace('\n\n', ' | ').replace('\n', ' ')[:300]
+            lines.append(f'STYLE GUIDE: {condensed}')
+        lines.append(f'Email: {lead.email}')
+        if lead.first_name:  lines.append(f'First Name: {lead.first_name}')
+        if lead.last_name:   lines.append(f'Last Name: {lead.last_name}')
+        if lead.company:     lines.append(f'Company: {lead.company}')
+        if lead.title:       lines.append(f'Title: {lead.title}')
+        if lead.website:     lines.append(f'Website: {lead.website}')
+        if lead.signal_1:    lines.append(f'Signal 1: {lead.signal_1}')
+        if lead.signal_2:    lines.append(f'Signal 2: {lead.signal_2}')
+        lead_blocks.append('\n'.join(lines))
+
+    prompt = f"""You are a B2B sales copywriter. Write one personalized email for EACH lead below.
+Each lead specifies their EMAIL TYPE — write exactly that type of email for that person.
+
+RULES:
+- Under 100 words per email
+- Plain text only — no bullet points, no HTML, no markdown
+- Conversational and human — not salesy or corporate
+- Personalize using the lead's name, company, title, and any signals
+- Use the STYLE GUIDE as a structural reference — do not copy it verbatim
+- Do not invent facts you don't have
+
+OUTPUT FORMAT — use this exactly for every lead, no exceptions:
+
+---LEAD:{{email address}}---
+SUBJECT: {{subject line}}
+BODY:
+{{email body}}
+---END---
+
+Write all {len(results)} emails now. Start immediately with the first ---LEAD:--- block.
+
+{'=' * 60}
+
+""" + '\n\n'.join(lead_blocks)
+
+    return prompt
+
+
+@campaigns_bp.route('/<int:campaign_id>/write-with-ai', methods=['GET'])
+@login_required
+def write_with_ai(campaign_id):
+    campaign = Campaign.query.filter_by(id=campaign_id, user_id=current_user.id).first_or_404()
+
+    days_out = request.args.get('days_out', '')
+    try:
+        limit = max(1, min(200, int(request.args.get('limit', 30))))
+    except (ValueError, TypeError):
+        limit = 30
+
+    results = []
+    lead_step_map = {}   # email -> {enrolled_lead_id, step_id, template_id}
+
+    if days_out:
+        try:
+            days_out_int = max(0, int(days_out))
+        except (ValueError, TypeError):
+            days_out_int = 1
+        results = _find_due_leads(campaign, days_out_int, limit)
+        lead_step_map = {
+            r['email']: {
+                'enrolled_lead_id': r['enrolled_lead_id'],
+                'step_id':          r['step_id'],
+                'template_id':      r['template_id'],
+            }
+            for r in results
+        }
+
+    return render_template(
+        'campaigns/write_with_ai.html',
+        campaign=campaign,
+        results=results,
+        days_out=days_out,
+        limit=limit,
+        lead_step_map_json=json.dumps(lead_step_map),
+        prompt=_build_combined_prompt(results) if results else '',
+    )
+
+
+@campaigns_bp.route('/<int:campaign_id>/write-with-ai/import', methods=['POST'])
+@login_required
+def write_with_ai_import(campaign_id):
+    campaign = Campaign.query.filter_by(id=campaign_id, user_id=current_user.id).first_or_404()
+
+    raw_output   = request.form.get('ai_output', '').strip()
+    action       = request.form.get('action', 'draft')
+    lead_step_raw = request.form.get('lead_step_map', '{}')
+
+    if not raw_output:
+        flash('Paste the AI output before importing.', 'warning')
+        return redirect(url_for('campaigns.write_with_ai', campaign_id=campaign_id))
+
+    try:
+        lead_step_map = json.loads(lead_step_raw)
+    except (ValueError, TypeError):
+        lead_step_map = {}
+
+    pattern = r'---LEAD:\s*(.*?)\s*---\s*SUBJECT:\s*(.*?)\s*BODY:\s*(.*?)\s*---END---'
+    matches = re.findall(pattern, raw_output, re.DOTALL | re.IGNORECASE)
+
+    if not matches:
+        flash('Could not parse the AI output — make sure it includes all ---LEAD:--- and ---END--- markers.', 'danger')
+        return redirect(url_for('campaigns.write_with_ai', campaign_id=campaign_id))
+
+    saved = sent_ok = skipped = 0
+    errors = []
+
+    for email_addr, subject, body in matches:
+        email_addr = email_addr.strip().lower()
+        subject    = subject.strip()
+        body       = body.strip()
+
+        if not email_addr or not subject or not body:
+            skipped += 1
+            continue
+
+        mapping = lead_step_map.get(email_addr) or lead_step_map.get(email_addr.lower())
+        if not mapping:
+            skipped += 1
+            errors.append(f'{email_addr}: not in the generated lead list')
+            continue
+
+        el = EnrolledLead.query.filter_by(
+            id=mapping['enrolled_lead_id'],
+            campaign_id=campaign_id
+        ).first()
+        if not el or el.lead.user_id != current_user.id:
+            skipped += 1
+            errors.append(f'{email_addr}: enrollment not found')
+            continue
+
+        step_id    = mapping.get('step_id')
+        template_id = mapping.get('template_id')
+
+        # Prevent double-save if already has a log for this step
+        if step_id and SendLog.query.filter_by(enrolled_lead_id=el.id, step_id=step_id).first():
+            skipped += 1
+            errors.append(f'{email_addr}: already has an email for this step')
+            continue
+
+        if action == 'send':
+            from email_service import send_email
+            from models import EmailAccount
+            accounts = EmailAccount.query.filter_by(user_id=current_user.id, active=True).all()
+            account  = accounts[sent_ok % len(accounts)] if accounts else None
+            if not account:
+                skipped += 1
+                errors.append(f'{email_addr}: no active email account')
+                continue
+            success, error = send_email(account, el.lead.email, subject, body, current_user)
+            log = SendLog(
+                enrolled_lead_id=el.id,
+                step_id=step_id,
+                template_id=template_id,
+                variant_label='AI-Prompt',
+                subject=subject,
+                body_snippet=body[:4000],
+                status=SendStatus.SENT if success else SendStatus.FAILED,
+                sent_at=datetime.utcnow() if success else None,
+                from_account_id=account.id if success else None,
+            )
+            db.session.add(log)
+            if success:
+                sent_ok += 1
+            else:
+                skipped += 1
+                errors.append(f'{email_addr}: send failed — {error}')
+        else:
+            log = SendLog(
+                enrolled_lead_id=el.id,
+                step_id=step_id,
+                template_id=template_id,
+                variant_label='AI-Prompt',
+                subject=subject,
+                body_snippet=body[:4000],
+                status=SendStatus.DRAFT,
+            )
+            db.session.add(log)
+            saved += 1
+
+    db.session.commit()
+
+    if action == 'send':
+        flash(f'Sent {sent_ok} email{"s" if sent_ok != 1 else ""}. {skipped} skipped.', 'success')
+    else:
+        flash(f'{saved} draft{"s" if saved != 1 else ""} added to Review Queue. {skipped} skipped.', 'success')
+
+    if errors:
+        flash('Skipped: ' + '; '.join(errors[:5]) + (f' (+{len(errors)-5} more)' if len(errors) > 5 else ''), 'warning')
+
+    return redirect(url_for('campaigns.detail', campaign_id=campaign_id, tab='review'))
