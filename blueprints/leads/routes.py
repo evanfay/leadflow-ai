@@ -391,17 +391,44 @@ def ai_prompt():
     campaigns = Campaign.query.filter_by(user_id=current_user.id).order_by(Campaign.name).all()
     templates = Template.query.filter(
         (Template.user_id == current_user.id) | (Template.is_builtin == True)
-    ).filter(Template.touch_type.in_([
-        'observation', 'hypothesis', 'proof', 'soft_close', 'breakup',
-        'not_now', 'link_clicked', 'reply_received'
-    ])).order_by(Template.touch_type, Template.name).all()
+    ).order_by(Template.touch_type, Template.name).all()
+
+    # Build per-campaign sequence step data for the JS
+    _touch_labels = {
+        'opener': 'Opener', 'observation': 'Opening Touch',
+        'hypothesis': 'Follow-up 2', 'proof': 'Follow-up 3 — Proof',
+        'soft_close': 'Soft Close', 'breakup': 'Breakup',
+        'not_now': 'Not Now Reply', 'link_clicked': 'Link Clicked',
+        'reply_received': 'Reply Received', 'out_of_office': 'Out of Office',
+    }
+    campaign_seq_data = {}
+    for c in campaigns:
+        if c.sequence_id and c.sequence:
+            seq_steps = []
+            for step in sorted(c.sequence.steps.all(), key=lambda s: s.day_offset):
+                if step.channel != 'Email':
+                    continue
+                st = step.step_templates.filter_by(is_active=True).first()
+                pinned = st.template if st else None
+                touch = step.template_slot
+                seq_steps.append({
+                    'touch_type': touch,
+                    'day': step.day_offset,
+                    'template_id': pinned.id if pinned else None,
+                    'template_name': pinned.name if pinned else None,
+                    'label': _touch_labels.get(touch, touch.replace('_', ' ').title()),
+                    'desc': f'Day {step.day_offset}' + (f' — {pinned.name}' if pinned else ''),
+                })
+            if seq_steps:
+                campaign_seq_data[c.id] = seq_steps
 
     return render_template('leads/ai_prompt.html',
                            leads=leads,
                            lead_ids=[str(l.id) for l in leads],
                            campaign_id=campaign_id,
                            campaigns=campaigns,
-                           templates=templates)
+                           templates=templates,
+                           campaign_seq_data=campaign_seq_data)
 
 
 @leads_bp.route('/ai-prompt/generate', methods=['POST'])

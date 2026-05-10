@@ -47,52 +47,53 @@
           <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.5rem;">
             Emails will be saved to this campaign's Review Queue. Leads must be enrolled in it.
           </p>
-          <select id="campaign-select" class="form-control" onchange="updateLeadCount()">
+          <select id="campaign-select" class="form-control" onchange="onCampaignChange()">
             <option value="">— Select a campaign —</option>
             {% for c in campaigns %}
-            <option value="{{ c.id }}" {% if campaign_id|string == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+            <option value="{{ c.id }}" {% if campaign_id|string == c.id|string %}selected{% endif %}
+                    data-has-seq="{{ 'true' if c.id|string in campaign_seq_data|string else 'false' }}">{{ c.name }}</option>
             {% endfor %}
           </select>
         </div>
 
-        <!-- Touch type -->
+        <!-- Email Type (sequence-aware) -->
         <div class="form-group">
           <label class="form-label">Email Type</label>
+          <div id="seq-badge" style="display:none; margin-bottom:0.5rem;">
+            <span style="font-size:0.78rem; color:var(--accent-1); font-weight:600;">
+              <i data-lucide="git-branch" style="width:12px;height:12px;"></i>
+              Loaded from sequence — template pre-selected per step
+            </span>
+          </div>
           <div class="touch-grid" id="touch-grid">
-            {% set touch_opts = [
-              ('observation', 'Opening Touch', 'First email — reference a signal or observation about their business'),
-              ('hypothesis', 'Second Touch', 'Follow-up with a hypothesis about their pain point'),
-              ('proof', 'Third Touch', 'Share a case study or proof point'),
-              ('soft_close', 'Soft Close', 'Light call-to-action before giving up'),
-              ('breakup', 'Breakup Email', 'Final email in the sequence'),
-              ('not_now', 'Not Now Follow-up', 'Re-engage a lead who said "not right now"'),
-            ] %}
-            {% for val, label, desc in touch_opts %}
-            <label class="touch-card {% if loop.first %}touch-card-active{% endif %}" data-val="{{ val }}">
-              <input type="radio" name="touch_type_radio" value="{{ val }}" {% if loop.first %}checked{% endif %}
-                     style="display:none;" onchange="selectTouch('{{ val }}')">
-              <div style="font-weight:600;font-size:0.88rem;">{{ label }}</div>
-              <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.2rem;">{{ desc }}</div>
-            </label>
-            {% endfor %}
+            <!-- Populated by JS; default shown below for no-sequence campaigns -->
           </div>
         </div>
 
-        <!-- Template (optional) -->
-        <div class="form-group">
+        <!-- Template (optional, overrideable) -->
+        <div class="form-group" id="template-group">
           <label class="form-label">Template Guidance <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
-          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.5rem;">
+          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.5rem;" id="template-hint">
             The AI will use this as a style guide — not copied verbatim.
           </p>
           <select id="template-select" class="form-control">
             <option value="">— No template (AI decides style) —</option>
-            {% set current_touch = 'observation' %}
             {% for t in templates %}
             <option value="{{ t.id }}" data-touch="{{ t.touch_type }}">
               {{ t.name }}{% if t.is_builtin %} (built-in){% endif %}
             </option>
             {% endfor %}
           </select>
+        </div>
+
+        <!-- Batch size -->
+        <div class="form-group">
+          <label class="form-label">Generate for how many leads?</label>
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <input type="number" id="batch-size" class="form-control" value="20" min="1" max="{{ leads|length }}"
+                   style="width:100px;">
+            <span style="font-size:0.82rem; color:var(--text-muted);">of {{ leads|length }} selected (prompt grows with more leads — keep under 50 for best results)</span>
+          </div>
         </div>
 
         <button class="btn btn-primary" onclick="generatePrompt()" style="width:100%;">
@@ -274,10 +275,25 @@
 // ── State ──────────────────────────────────────────────────────────────────
 let currentStep = 1;
 let generatedPrompt = '';
-let selectedTouch = '{{ 'observation' }}';
+let selectedTouch = 'observation';
+let pinnedTemplateId = '';  // auto-set when a sequence step is chosen
 
 const leadIds = Array.from(document.querySelectorAll('#lead-id-store [data-lead-id]'))
                      .map(el => el.dataset.leadId);
+
+// Campaign → sequence steps data from server
+const CAMPAIGN_SEQ = {{ campaign_seq_data | tojson }};
+
+// Default touch cards (used when campaign has no sequence)
+const DEFAULT_TOUCHES = [
+  ['opener',      'Opener',          'First email in the sequence'],
+  ['observation', 'Opening Touch',   'Reference a signal or observation about their business'],
+  ['hypothesis',  'Second Touch',    'Follow-up with a hypothesis about their pain point'],
+  ['proof',       'Third Touch',     'Share a case study or proof point'],
+  ['soft_close',  'Soft Close',      'Light call-to-action before giving up'],
+  ['breakup',     'Breakup Email',   'Final email in the sequence'],
+  ['not_now',     'Not Now Reply',   'Re-engage a lead who said "not right now"'],
+];
 
 // ── Step navigation ────────────────────────────────────────────────────────
 function showStep(n) {
@@ -292,23 +308,80 @@ function showStep(n) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// ── Render touch cards ─────────────────────────────────────────────────────
+function renderTouchCards(cards) {
+  // cards: [{val, label, desc, templateId, templateName}]
+  const grid = document.getElementById('touch-grid');
+  grid.innerHTML = '';
+  cards.forEach((c, i) => {
+    const div = document.createElement('label');
+    div.className = 'touch-card' + (i === 0 ? ' touch-card-active' : '');
+    div.dataset.val = c.val;
+    div.dataset.templateId = c.templateId || '';
+    div.innerHTML = `
+      <input type="radio" name="touch_type_radio" value="${c.val}" ${i === 0 ? 'checked' : ''}
+             style="display:none;" onchange="selectTouch('${c.val}', '${c.templateId || ''}')">
+      <div style="font-weight:600;font-size:0.88rem;">${c.label}</div>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.2rem;">${c.desc}</div>
+      ${c.templateName ? `<div style="font-size:0.72rem;color:var(--accent-1);margin-top:0.3rem;"><i>📄 ${c.templateName}</i></div>` : ''}`;
+    grid.appendChild(div);
+  });
+  // Select first
+  if (cards.length > 0) selectTouch(cards[0].val, cards[0].templateId || '');
+}
+
+// ── Campaign change ────────────────────────────────────────────────────────
+function onCampaignChange() {
+  const cid = document.getElementById('campaign-select').value;
+  const seqBadge = document.getElementById('seq-badge');
+  const templateHint = document.getElementById('template-hint');
+
+  if (cid && CAMPAIGN_SEQ[cid]) {
+    // Campaign has a sequence — build cards from sequence steps
+    seqBadge.style.display = '';
+    templateHint.textContent = 'Auto-selected from the sequence step — override if needed.';
+    const cards = CAMPAIGN_SEQ[cid].map(step => ({
+      val: step.touch_type,
+      label: step.label,
+      desc: step.desc,
+      templateId: step.template_id ? String(step.template_id) : '',
+      templateName: step.template_name || '',
+    }));
+    renderTouchCards(cards);
+  } else {
+    // No sequence — show default cards
+    seqBadge.style.display = 'none';
+    templateHint.textContent = 'The AI will use this as a style guide — not copied verbatim.';
+    const cards = DEFAULT_TOUCHES.map(([val, label, desc]) => ({val, label, desc, templateId:'', templateName:''}));
+    renderTouchCards(cards);
+  }
+
+  document.getElementById('enrolled-note').textContent =
+    cid ? 'Leads not enrolled in this campaign will be skipped on import.' : '';
+}
+
 // ── Touch type selection ───────────────────────────────────────────────────
-function selectTouch(val) {
+function selectTouch(val, templateId) {
   selectedTouch = val;
+  pinnedTemplateId = templateId || '';
   document.querySelectorAll('.touch-card').forEach(card => {
     card.classList.toggle('touch-card-active', card.dataset.val === val);
   });
-  // Filter template dropdown to matching touch type
-  filterTemplates(val);
+  // Auto-select pinned template if provided, otherwise filter by touch type
+  const sel = document.getElementById('template-select');
+  if (pinnedTemplateId) {
+    sel.value = pinnedTemplateId;
+  } else {
+    filterTemplates(val);
+  }
 }
 
 function filterTemplates(touch) {
   const sel = document.getElementById('template-select');
   Array.from(sel.options).forEach(opt => {
-    if (!opt.value) return; // keep the blank option
+    if (!opt.value) return;
     opt.style.display = (opt.dataset.touch === touch) ? '' : 'none';
   });
-  // Reset to blank if current selection doesn't match
   const cur = sel.options[sel.selectedIndex];
   if (cur.value && cur.dataset.touch !== touch) sel.value = '';
 }
@@ -316,18 +389,19 @@ function filterTemplates(touch) {
 // ── Generate prompt ────────────────────────────────────────────────────────
 function generatePrompt() {
   const campaignId = document.getElementById('campaign-select').value;
-  if (!campaignId) {
-    alert('Please select a campaign first.');
-    return;
-  }
+  if (!campaignId) { alert('Please select a campaign first.'); return; }
 
   const templateId = document.getElementById('template-select').value;
+  const batchSize = parseInt(document.getElementById('batch-size').value) || 20;
+  const batchedIds = leadIds.slice(0, batchSize);
+
   const btn = event.currentTarget;
   btn.disabled = true;
   btn.innerHTML = '<i data-lucide="loader-2"></i> Generating…';
+  if (window.lucide) lucide.createIcons();
 
   const fd = new FormData();
-  leadIds.forEach(id => fd.append('lead_ids', id));
+  batchedIds.forEach(id => fd.append('lead_ids', id));
   fd.append('touch_type', selectedTouch);
   fd.append('template_id', templateId);
 
@@ -337,7 +411,6 @@ function generatePrompt() {
       if (data.error) { alert(data.error); return; }
       generatedPrompt = data.prompt;
       document.getElementById('prompt-display').textContent = generatedPrompt;
-      // Seed import fields
       document.getElementById('import-campaign-id').value = campaignId;
       document.getElementById('import-touch-type').value = selectedTouch;
       if (window.lucide) lucide.createIcons();
@@ -372,20 +445,15 @@ function parsePreview() {
   const preview = document.getElementById('parse-preview');
   const ok = document.getElementById('parse-ok');
   const warn = document.getElementById('parse-warn');
-
   if (!text.trim()) { preview.style.display = 'none'; return; }
-
   const matches = [...text.matchAll(/---LEAD:\s*(.*?)\s*---\s*SUBJECT:\s*(.*?)\s*BODY:\s*(.*?)\s*---END---/gis)];
   preview.style.display = '';
-
   if (matches.length > 0) {
-    ok.style.display = 'flex';
-    warn.style.display = 'none';
+    ok.style.display = 'flex'; warn.style.display = 'none';
     document.getElementById('parse-ok-msg').textContent =
       `✓ Detected ${matches.length} email${matches.length !== 1 ? 's' : ''} ready to import.`;
   } else {
-    ok.style.display = 'none';
-    warn.style.display = 'flex';
+    ok.style.display = 'none'; warn.style.display = 'flex';
     document.getElementById('parse-warn-msg').textContent =
       'No emails detected yet. Make sure the output includes ---LEAD:--- and ---END--- markers.';
   }
@@ -402,19 +470,12 @@ function selectAction(val) {
   if (window.lucide) lucide.createIcons();
 }
 
-// ── Update lead count when campaign changes ────────────────────────────────
-function updateLeadCount() {
-  // Just visual — actual filtering happens server-side on import
-  document.getElementById('enrolled-note').textContent =
-    'Select a campaign — leads not enrolled in it will be skipped on import.';
-}
-
 // ── Init ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  filterTemplates(selectedTouch);
   {% if campaign_id %}
   document.getElementById('campaign-select').value = '{{ campaign_id }}';
   {% endif %}
+  onCampaignChange();  // renders touch cards for the pre-selected campaign (or defaults)
 });
 </script>
 {% endblock %}

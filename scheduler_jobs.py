@@ -102,9 +102,14 @@ def _account_can_send(account):
 
 
 def send_due_emails(app):
-    """Check enrolled leads for due email steps and send them."""
+    """Check enrolled leads for due email steps and send them.
+
+    Priority rule: leads that already have sent emails (follow-ups) are processed
+    before leads receiving their very first touch. This ensures follow-up relationships
+    are maintained even when the daily cap is tight.
+    """
     with app.app_context():
-        from models import db, EnrolledLead, DoNotContact, EmailAccount
+        from models import db, EnrolledLead, DoNotContact, EmailAccount, SendLog
         from models import EnrolledStatus
 
         now = datetime.utcnow()
@@ -116,12 +121,46 @@ def send_due_emails(app):
             return
 
         active_leads = EnrolledLead.query.filter_by(status=EnrolledStatus.ACTIVE).all()
+
+        # ── Priority sort: follow-ups before first-touch ────────────────────
+        # Leads enrolled earlier are further in the sequence (more follow-ups due).
+        # current_step > 0 means they started mid-sequence (already contacted outside).
+        # Together these push follow-ups to the front of the queue.
+        def _priority_key(el):
+            # Higher current_step = further along = higher priority (lower sort value)
+            step_prio = -el.current_step if el.current_step else 0
+            # Older enrollment = more likely to be on a follow-up step
+            enrolled_ts = el.enrolled_at.timestamp() if el.enrolled_at else 0
+            return (step_prio, enrolled_ts)
+
+        active_leads.sort(key=_priority_key)
+
+        # ── Check if all accounts are already at cap — bail early ───────────
+        accounts = EmailAccount.query.filter(
+            EmailAccount.active == True
+        ).all()
+
+        def _all_capped(user_id):
+            user_accounts = [a for a in accounts if a.user_id == user_id]
+            return bool(user_accounts) and all(not _account_can_send(a) for a in user_accounts)
+
+        # Cache per-user cap status to avoid hammering DB mid-loop
+        user_capped_cache = {}
+
         for el in active_leads:
             try:
                 campaign = el.campaign
                 if not campaign or not campaign.sequence_id:
                     continue
                 if campaign.status != 'active':
+                    continue
+
+                uid = campaign.user_id
+                # Check cap cache; refresh once per user per scheduler run
+                if uid not in user_capped_cache:
+                    user_capped_cache[uid] = _all_capped(uid)
+                if user_capped_cache[uid]:
+                    # All this user's accounts are at cap — skip remaining leads for them
                     continue
 
                 sequence = campaign.sequence
@@ -134,7 +173,6 @@ def send_due_emails(app):
                     due_date = enrolled_date + timedelta(days=step.day_offset + jitter)
 
                     if today >= due_date and step.channel == 'Email' and step.is_auto:
-                        from models import SendLog
                         existing_log = SendLog.query.filter_by(
                             enrolled_lead_id=el.id,
                             step_id=step.id
@@ -143,6 +181,8 @@ def send_due_emails(app):
                             # Pre-loaded draft ready to auto-send
                             if existing_log.status == 'queued' and existing_log.body_snippet:
                                 _send_queued_draft(existing_log, el, step, campaign)
+                                # Invalidate cap cache for this user after a send
+                                user_capped_cache.pop(uid, None)
                             continue
 
                         lead = el.lead
@@ -156,6 +196,8 @@ def send_due_emails(app):
                             break
 
                         _queue_email_step(el, step, campaign)
+                        # Invalidate cap cache after a send attempt
+                        user_capped_cache.pop(uid, None)
                         break
             except Exception as e:
                 print(f'[Scheduler] Error processing enrolled lead {el.id}: {e}')
