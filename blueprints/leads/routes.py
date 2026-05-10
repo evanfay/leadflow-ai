@@ -759,7 +759,7 @@ def pre_load():
             campaign = Campaign.query.filter_by(id=int(campaign_id), user_id=current_user.id).first_or_404()
             if campaign.sequence_id:
                 from datetime import date, timedelta
-                import random
+                from scheduler_jobs import _step_jitter
                 sequence = campaign.sequence
                 steps = sorted(sequence.steps.all(), key=lambda s: s.day_offset)
 
@@ -773,7 +773,7 @@ def pre_load():
                         break
                     lead = el.lead
                     for step in steps:
-                        jitter = random.randint(-1, 1)
+                        jitter = _step_jitter(el.id, step.id)
                         due_date = el.enrolled_at.date() + timedelta(days=step.day_offset + jitter)
                         if today < due_date:
                             continue

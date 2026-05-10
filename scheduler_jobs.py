@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, date
-import random
 
 
 # Warmup send caps by tier and week number
@@ -101,40 +100,47 @@ def _account_can_send(account):
     return sent_today < cap
 
 
-# Ratio of follow-up emails to new first-touch emails in the daily send queue.
-# 2 means: for every 2 follow-ups sent, 1 new-lead opener is sent.
-# Adjust higher (e.g. 3) to protect more capacity for follow-ups,
-# or lower (e.g. 1) for a 50/50 split.
-FOLLOWUP_TO_NEW_RATIO = 2
+# Daily send ratio: (follow_ups_per_cycle, new_touches_per_cycle).
+# (3, 2) = 60 % follow-ups / 40 % new first-touch openers.
+# Examples:
+#   (1, 1) → 50/50    (2, 1) → 67/33    (3, 2) → 60/40    (3, 1) → 75/25
+SEND_RATIO = (3, 2)   # 60 % follow-ups, 40 % new touches
+
+
+def _step_jitter(enrolled_lead_id, step_id):
+    """
+    Deterministic ±1-day jitter for a given lead+step pair.
+    Using a hash means the same pair always gets the same offset, so a step
+    that is 'due' at 8 am stays due at 8:15 am and doesn't randomly flip.
+    """
+    return (hash((enrolled_lead_id, step_id)) % 3) - 1   # always -1, 0, or +1
 
 
 def _interleave_leads(active_leads, followup_ids):
     """
     Split active leads into follow-up and new-touch buckets, then interleave
-    them at a FOLLOWUP_TO_NEW_RATIO ratio so both always get capacity.
+    them according to SEND_RATIO so both always get daily capacity.
 
-    Example at ratio=2, cap=30: ~20 follow-ups, ~10 new touches per day.
-    When one bucket empties, the remaining capacity goes to the other — so
-    the cap is never wasted.
+    At SEND_RATIO=(3,2) and cap=50: ~30 follow-ups + ~20 new openers per day.
+    When one bucket empties, remaining capacity goes to the other — no waste.
     """
-    followups = [el for el in active_leads if el.id in followup_ids]
+    followups  = [el for el in active_leads if el.id in followup_ids]
     new_touches = [el for el in active_leads if el.id not in followup_ids]
 
-    # Sort each bucket: follow-ups by enrolled_at ascending (oldest = most overdue),
-    # new touches by enrolled_at ascending (FIFO — enrolled first, contacted first)
+    # Within each bucket: oldest enrollment first (most overdue / FIFO)
     followups.sort(key=lambda el: el.enrolled_at or datetime.min)
     new_touches.sort(key=lambda el: el.enrolled_at or datetime.min)
 
+    fu_per_cycle, new_per_cycle = SEND_RATIO
     interleaved = []
     fi = ni = 0
     while fi < len(followups) or ni < len(new_touches):
-        for _ in range(FOLLOWUP_TO_NEW_RATIO):
+        for _ in range(fu_per_cycle):
             if fi < len(followups):
-                interleaved.append(followups[fi])
-                fi += 1
-        if ni < len(new_touches):
-            interleaved.append(new_touches[ni])
-            ni += 1
+                interleaved.append(followups[fi]); fi += 1
+        for _ in range(new_per_cycle):
+            if ni < len(new_touches):
+                interleaved.append(new_touches[ni]); ni += 1
 
     return interleaved
 
@@ -205,7 +211,7 @@ def send_due_emails(app):
                 today = date.today()
 
                 for step in steps:
-                    jitter = random.randint(-1, 1)
+                    jitter = _step_jitter(el.id, step.id)
                     due_date = enrolled_date + timedelta(days=step.day_offset + jitter)
 
                     if today >= due_date and step.channel == 'Email' and step.is_auto:
