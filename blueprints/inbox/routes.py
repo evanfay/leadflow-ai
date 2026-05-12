@@ -13,26 +13,23 @@ from datetime import datetime
 def replies():
     category_filter = request.args.get('category', '')
 
-    query = ReplyLog.query.join(
+    base_query = ReplyLog.query.join(
         EnrolledLead, ReplyLog.enrolled_lead_id == EnrolledLead.id
     ).join(
         Campaign, EnrolledLead.campaign_id == Campaign.id
     ).filter(Campaign.user_id == current_user.id)
 
     if category_filter:
-        query = query.filter(ReplyLog.reply_category == category_filter)
+        query = base_query.filter(ReplyLog.reply_category == category_filter)
+    else:
+        query = base_query
 
     reply_logs = query.order_by(ReplyLog.received_at.desc()).all()
 
-    # Category counts
-    all_replies = ReplyLog.query.join(
-        EnrolledLead, ReplyLog.enrolled_lead_id == EnrolledLead.id
-    ).join(
-        Campaign, EnrolledLead.campaign_id == Campaign.id
-    ).filter(Campaign.user_id == current_user.id).all()
-
+    # Category counts — only unhandled, so badges clear when handled
+    unhandled = base_query.filter(ReplyLog.handled == False).all()
     counts = {}
-    for r in all_replies:
+    for r in unhandled:
         counts[r.reply_category] = counts.get(r.reply_category, 0) + 1
 
     active_campaigns = Campaign.query.filter_by(
