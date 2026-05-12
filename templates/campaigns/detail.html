@@ -301,9 +301,20 @@
   <!-- REVIEW QUEUE TAB -->
   {% elif tab == 'review' %}
   <div class="card">
-    <div class="card-header">
-      <h2 class="card-title">Pending Drafts ({{ drafts|length }})</h2>
-      <p class="card-subtitle">Review AI-generated emails before they send</p>
+    <div class="card-header" style="justify-content:space-between;">
+      <div>
+        <h2 class="card-title">Pending Drafts ({{ drafts|length }})</h2>
+        <p class="card-subtitle">Review AI-generated emails before they send</p>
+      </div>
+      {% if drafts %}
+      <form method="POST" action="{{ url_for('campaigns.queue_all_drafts', campaign_id=campaign.id) }}"
+            onsubmit="return confirm('Queue all {{ drafts|length }} drafts for the scheduler? They will send automatically when each one is due.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i data-lucide="clock"></i> Queue All for Scheduler
+        </button>
+      </form>
+      {% endif %}
     </div>
     <div class="card-body" style="padding:0;">
       {% if drafts %}

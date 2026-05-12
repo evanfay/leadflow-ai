@@ -256,6 +256,27 @@ def edit_draft(campaign_id, draft_id):
     return redirect(url_for('campaigns.detail', campaign_id=campaign_id, tab='review'))
 
 
+@campaigns_bp.route('/<int:campaign_id>/drafts/queue-all', methods=['POST'])
+@login_required
+def queue_all_drafts(campaign_id):
+    """Convert all pending drafts for this campaign to queued so the scheduler sends them."""
+    Campaign.query.filter_by(id=campaign_id, user_id=current_user.id).first_or_404()
+    drafts = SendLog.query.join(
+        EnrolledLead, SendLog.enrolled_lead_id == EnrolledLead.id
+    ).filter(
+        EnrolledLead.campaign_id == campaign_id,
+        SendLog.status == SendStatus.DRAFT,
+    ).all()
+    count = 0
+    for d in drafts:
+        if d.body_snippet:   # only queue if there's actually content
+            d.status = SendStatus.QUEUED
+            count += 1
+    db.session.commit()
+    flash(f'{count} email{"s" if count != 1 else ""} queued — the scheduler will send them when each one is due.', 'success')
+    return redirect(url_for('campaigns.detail', campaign_id=campaign_id, tab='review'))
+
+
 @campaigns_bp.route('/<int:campaign_id>/drafts/<int:draft_id>/skip', methods=['POST'])
 @login_required
 def skip_draft(campaign_id, draft_id):
