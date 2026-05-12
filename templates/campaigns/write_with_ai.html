@@ -262,27 +262,17 @@
           </div>
         </div>
 
-        <!-- Action -->
-        <div class="form-group">
-          <label class="form-label">What happens after import?</label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:0.5rem;">
-            <label class="radio-card radio-card-active" id="action-draft-card">
-              <input type="radio" name="action" value="draft" checked style="display:none;"
-                     onchange="selectAction('draft')">
-              <div class="radio-card-title"><i data-lucide="eye" style="width:15px;height:15px;"></i> Save as Drafts</div>
-              <div class="radio-card-desc">Review in the Review Queue before each email sends.</div>
-            </label>
-            <label class="radio-card" id="action-send-card">
-              <input type="radio" name="action" value="send" style="display:none;"
-                     onchange="selectAction('send')">
-              <div class="radio-card-title"><i data-lucide="send" style="width:15px;height:15px;"></i> Send Now</div>
-              <div class="radio-card-desc">Send all emails immediately via your active account.</div>
-            </label>
+        <!-- Queue info -->
+        <div class="alert-info" style="margin-bottom:1.25rem;">
+          <i data-lucide="clock" style="width:16px;height:16px;flex-shrink:0;"></i>
+          <div>
+            Emails are <strong>queued for the scheduler</strong> — each one sends automatically when it's due,
+            respecting your daily sending limit and send windows. No manual approval needed.
           </div>
         </div>
 
         <button type="submit" class="btn btn-primary" style="width:100%;margin-top:0.5rem;" id="import-btn">
-          <i data-lucide="upload"></i> Import & Save Drafts
+          <i data-lucide="upload"></i> Import & Queue for Sending
         </button>
       </div>
     </div>

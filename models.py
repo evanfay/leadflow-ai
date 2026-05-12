@@ -26,6 +26,7 @@ class TaskStatus:
 
 class SendStatus:
     DRAFT = 'draft'
+    QUEUED = 'queued'
     SENT = 'sent'
     FAILED = 'failed'
     SKIPPED = 'skipped'

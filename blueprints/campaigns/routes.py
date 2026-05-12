@@ -591,8 +591,7 @@ def write_with_ai(campaign_id):
 def write_with_ai_import(campaign_id):
     campaign = Campaign.query.filter_by(id=campaign_id, user_id=current_user.id).first_or_404()
 
-    raw_output   = request.form.get('ai_output', '').strip()
-    action       = request.form.get('action', 'draft')
+    raw_output    = request.form.get('ai_output', '').strip()
     lead_step_raw = request.form.get('lead_step_map', '{}')
 
     if not raw_output:
@@ -647,52 +646,21 @@ def write_with_ai_import(campaign_id):
             errors.append(f'{email_addr}: already has an email for this step')
             continue
 
-        if action == 'send':
-            from email_service import send_email
-            from models import EmailAccount
-            accounts = EmailAccount.query.filter_by(user_id=current_user.id, active=True).all()
-            account  = accounts[sent_ok % len(accounts)] if accounts else None
-            if not account:
-                skipped += 1
-                errors.append(f'{email_addr}: no active email account')
-                continue
-            success, error = send_email(account, el.lead.email, subject, body, current_user)
-            log = SendLog(
-                enrolled_lead_id=el.id,
-                step_id=step_id,
-                template_id=template_id,
-                variant_label='AI-Prompt',
-                subject=subject,
-                body_snippet=body[:4000],
-                status=SendStatus.SENT if success else SendStatus.FAILED,
-                sent_at=datetime.utcnow() if success else None,
-                from_account_id=account.id if success else None,
-            )
-            db.session.add(log)
-            if success:
-                sent_ok += 1
-            else:
-                skipped += 1
-                errors.append(f'{email_addr}: send failed — {error}')
-        else:
-            log = SendLog(
-                enrolled_lead_id=el.id,
-                step_id=step_id,
-                template_id=template_id,
-                variant_label='AI-Prompt',
-                subject=subject,
-                body_snippet=body[:4000],
-                status=SendStatus.DRAFT,
-            )
-            db.session.add(log)
-            saved += 1
+        log = SendLog(
+            enrolled_lead_id=el.id,
+            step_id=step_id,
+            template_id=template_id,
+            variant_label='AI-Prompt',
+            subject=subject,
+            body_snippet=body[:4000],
+            status=SendStatus.QUEUED,
+        )
+        db.session.add(log)
+        saved += 1
 
     db.session.commit()
 
-    if action == 'send':
-        flash(f'Sent {sent_ok} email{"s" if sent_ok != 1 else ""}. {skipped} skipped.', 'success')
-    else:
-        flash(f'{saved} draft{"s" if saved != 1 else ""} added to Review Queue. {skipped} skipped.', 'success')
+    flash(f'{saved} email{"s" if saved != 1 else ""} queued — the scheduler will send them when each one is due. {skipped} skipped.', 'success')
 
     if errors:
         flash('Skipped: ' + '; '.join(errors[:5]) + (f' (+{len(errors)-5} more)' if len(errors) > 5 else ''), 'warning')
