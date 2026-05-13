@@ -789,9 +789,13 @@ def pre_load():
                         if step_templates:
                             tmpl = step_templates[0].template
                         else:
-                            tmpl = Template.query.filter_by(
-                                touch_type=step.template_slot, is_builtin=True
-                            ).first()
+                            # Prefer user's own template for this touch type, then builtin
+                            from models import Campaign as _Camp
+                            _camp_user = _Camp.query.get(c.id).user_id
+                            tmpl = (
+                                Template.query.filter_by(user_id=_camp_user, touch_type=step.template_slot).first()
+                                or Template.query.filter_by(touch_type=step.template_slot, is_builtin=True).first()
+                            )
                         if not tmpl:
                             continue
                         slots.append({

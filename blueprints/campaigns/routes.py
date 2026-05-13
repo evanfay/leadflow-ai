@@ -443,9 +443,14 @@ def _find_due_leads(campaign, days_out):
                 continue
 
             st = step.step_templates.filter_by(is_active=True).first()
-            tmpl = st.template if st else Template.query.filter_by(
-                touch_type=step.template_slot, is_builtin=True
-            ).first()
+            if st:
+                tmpl = st.template
+            else:
+                # Prefer user's own template matching this touch type, then fall back to builtin
+                tmpl = (
+                    Template.query.filter_by(user_id=campaign.user_id, touch_type=step.template_slot).first()
+                    or Template.query.filter_by(touch_type=step.template_slot, is_builtin=True).first()
+                )
 
             results.append({
                 'enrolled_lead_id': el.id,
@@ -519,7 +524,9 @@ Write all {len(results)} emails now. Start immediately with the first ---LEAD:--
 
 def _remaining_daily_capacity(user_id):
     """
-    Return the number of emails the user can still send today across all active accounts.
+    Return the number of emails the user can still write/queue today across all active accounts.
+    Counts both already-sent AND already-queued emails as spoken-for capacity so that
+    Part 2 of a batch correctly shows only the leftover slots, not another full batch.
     Returns None if unlimited (no caps set).
     """
     from models import EmailAccount, SendStatus
@@ -528,7 +535,17 @@ def _remaining_daily_capacity(user_id):
     if not accounts:
         return 0
     today_start = datetime.combine(date.today(), datetime.min.time())
-    total_remaining = 0
+
+    # Queued emails are already committed for today regardless of which account sends them
+    queued_today = SendLog.query.join(
+        EnrolledLead, SendLog.enrolled_lead_id == EnrolledLead.id
+    ).filter(
+        EnrolledLead.user_id == user_id,
+        SendLog.status == SendStatus.QUEUED,
+        SendLog.created_at >= today_start,
+    ).count()
+
+    total_cap = 0
     for acc in accounts:
         cap = _get_daily_cap(acc)
         if cap == float('inf'):
@@ -538,8 +555,9 @@ def _remaining_daily_capacity(user_id):
             SendLog.status == SendStatus.SENT,
             SendLog.sent_at >= today_start,
         ).count()
-        total_remaining += max(0, cap - sent_today)
-    return total_remaining
+        total_cap += cap - sent_today
+
+    return max(0, total_cap - queued_today)
 
 
 @campaigns_bp.route('/<int:campaign_id>/write-with-ai', methods=['GET'])
