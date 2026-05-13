@@ -582,7 +582,7 @@ def write_with_ai(campaign_id):
     has_more         = False
     more_count       = 0
     total_parts      = 1
-    daily_cap        = None   # None = unlimited
+    window_cap       = None   # None = unlimited
 
     if days_out:
         try:

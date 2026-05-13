@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time as dt_time
 
 
 # Warmup send caps by tier and week number
@@ -107,6 +107,22 @@ def _account_can_send(account):
 SEND_RATIO = (3, 2)   # 60 % follow-ups, 40 % new touches
 
 
+SEND_WINDOW_START = 8   # 8 am local time
+SEND_WINDOW_END   = 17  # 5 pm local time (exclusive)
+SEND_WINDOW_MINUTES = (SEND_WINDOW_END - SEND_WINDOW_START) * 60  # 540
+
+
+def _virtual_send_time(send_log_id, send_date):
+    """
+    Return a deterministic-but-hash-spread datetime within the 8am–5pm window
+    for the given send_date.  The same log ID always maps to the same minute,
+    so repeated scheduler runs are idempotent — the email sends exactly once,
+    when 'now' crosses its assigned minute.
+    """
+    minute_offset = abs(hash(send_log_id)) % SEND_WINDOW_MINUTES
+    return datetime.combine(send_date, dt_time(SEND_WINDOW_START, 0)) + timedelta(minutes=minute_offset)
+
+
 def _step_jitter(enrolled_lead_id, step_id):
     """
     Deterministic ±1-day jitter for a given lead+step pair.
@@ -157,12 +173,11 @@ def send_due_emails(app):
         from models import db, EnrolledLead, DoNotContact, EmailAccount, SendLog
         from models import EnrolledStatus, SendStatus
 
-        now = datetime.utcnow()
-        # Only send on weekdays, during business hours (8am–11am or 1pm–4pm UTC)
+        now = datetime.now()  # local time — send window is defined in local hours
+        # Only send on weekdays, during business hours (8 am–5 pm local)
         if now.weekday() >= 5:
             return
-        hour = now.hour
-        if not ((8 <= hour < 11) or (13 <= hour < 16)):
+        if not (SEND_WINDOW_START <= now.hour < SEND_WINDOW_END):
             return
 
         active_leads = EnrolledLead.query.filter_by(status=EnrolledStatus.ACTIVE).all()
@@ -220,11 +235,15 @@ def send_due_emails(app):
                             step_id=step.id
                         ).first()
                         if existing_log:
-                            # Pre-loaded draft ready to auto-send
+                            # Pre-loaded draft ready to auto-send — respect its virtual send time
+                            # so queued emails spread randomly across 8 am–5 pm rather than
+                            # all firing the moment the scheduler wakes up.
                             if existing_log.status == 'queued' and existing_log.body_snippet:
-                                _send_queued_draft(existing_log, el, step, campaign)
-                                # Invalidate cap cache for this user after a send
-                                user_capped_cache.pop(uid, None)
+                                send_date = max(due_date, date.today())
+                                if now >= _virtual_send_time(existing_log.id, send_date):
+                                    _send_queued_draft(existing_log, el, step, campaign)
+                                    # Invalidate cap cache for this user after a send
+                                    user_capped_cache.pop(uid, None)
                             continue
 
                         lead = el.lead
