@@ -522,11 +522,12 @@ Write all {len(results)} emails now. Start immediately with the first ---LEAD:--
     return prompt
 
 
-def _remaining_daily_capacity(user_id):
+def _remaining_daily_capacity(user_id, days_out=1):
     """
-    Return how many more emails the user can queue today across all active accounts.
-    Subtracts already-sent (today) + already-queued (pending) so Part 2 of a batch
-    shows only the remaining slots. Returns None if unlimited (no caps set).
+    Return how many more emails the user can queue across the given window.
+    Formula: raw_daily_cap * days_out - sent_today - already_queued
+    This ensures that emails already queued only consume one day of capacity,
+    not the entire multi-day window.  Returns None if unlimited (no caps set).
     """
     from models import EmailAccount, SendStatus, Campaign as _Campaign
     from scheduler_jobs import _get_daily_cap
@@ -537,8 +538,9 @@ def _remaining_daily_capacity(user_id):
 
     today_start = datetime.combine(date.today(), datetime.min.time())
 
-    # Total cap across all accounts
-    total_cap = 0
+    # Raw daily cap and sent-today totalled across all accounts
+    raw_daily_cap = 0
+    sent_today_total = 0
     for acc in accounts:
         cap = _get_daily_cap(acc)
         if cap == float('inf'):
@@ -548,7 +550,8 @@ def _remaining_daily_capacity(user_id):
             SendLog.status == SendStatus.SENT,
             SendLog.sent_at >= today_start,
         ).count()
-        total_cap += max(0, cap - sent_today)
+        raw_daily_cap += cap
+        sent_today_total += sent_today
 
     # Queued emails are already spoken for — join through Campaign to reach user_id
     already_queued = SendLog.query.join(
@@ -560,7 +563,8 @@ def _remaining_daily_capacity(user_id):
         SendLog.status == SendStatus.QUEUED,
     ).count()
 
-    return max(0, total_cap - already_queued)
+    # Queued emails occupy today's slots only; future days in the window are still open.
+    return max(0, raw_daily_cap * days_out - sent_today_total - already_queued)
 
 
 @campaigns_bp.route('/<int:campaign_id>/write-with-ai', methods=['GET'])
@@ -589,10 +593,9 @@ def write_with_ai(campaign_id):
         # All due leads in the window
         raw_results = _find_due_leads(campaign, days_out_int)
 
-        # Cap to sendable capacity across the whole window (daily cap × days looked ahead)
-        daily_cap = _remaining_daily_capacity(current_user.id)
-        if daily_cap is not None:
-            window_cap = daily_cap * max(1, days_out_int)
+        # Cap to sendable capacity across the whole window
+        window_cap = _remaining_daily_capacity(current_user.id, days_out=max(1, days_out_int))
+        if window_cap is not None:
             all_results = raw_results[:window_cap]
         else:
             all_results = raw_results
@@ -622,7 +625,7 @@ def write_with_ai(campaign_id):
         more_count=more_count,
         total_parts=total_parts,
         batch_size=AI_BATCH_SIZE,
-        daily_cap=daily_cap,
+        daily_cap=window_cap,
         lead_step_map_json=json.dumps(lead_step_map),
         prompt=_build_combined_prompt(results) if results else '',
     )
