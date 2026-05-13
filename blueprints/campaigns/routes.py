@@ -524,40 +524,43 @@ Write all {len(results)} emails now. Start immediately with the first ---LEAD:--
 
 def _remaining_daily_capacity(user_id):
     """
-    Return the number of emails the user can still write/queue today across all active accounts.
-    Counts both already-sent AND already-queued emails as spoken-for capacity so that
-    Part 2 of a batch correctly shows only the leftover slots, not another full batch.
-    Returns None if unlimited (no caps set).
+    Return how many more emails the user can queue today across all active accounts.
+    Subtracts already-sent (today) + already-queued (pending) so Part 2 of a batch
+    shows only the remaining slots. Returns None if unlimited (no caps set).
     """
-    from models import EmailAccount, SendStatus
+    from models import EmailAccount, SendStatus, Campaign as _Campaign
     from scheduler_jobs import _get_daily_cap
+
     accounts = EmailAccount.query.filter_by(user_id=user_id, active=True).all()
     if not accounts:
         return 0
+
     today_start = datetime.combine(date.today(), datetime.min.time())
 
-    # Queued emails are already committed for today regardless of which account sends them
-    queued_today = SendLog.query.join(
-        EnrolledLead, SendLog.enrolled_lead_id == EnrolledLead.id
-    ).filter(
-        EnrolledLead.user_id == user_id,
-        SendLog.status == SendStatus.QUEUED,
-        SendLog.created_at >= today_start,
-    ).count()
-
+    # Total cap across all accounts
     total_cap = 0
     for acc in accounts:
         cap = _get_daily_cap(acc)
         if cap == float('inf'):
-            return None   # at least one account is unlimited
+            return None  # at least one account is unlimited
         sent_today = SendLog.query.filter(
             SendLog.from_account_id == acc.id,
             SendLog.status == SendStatus.SENT,
             SendLog.sent_at >= today_start,
         ).count()
-        total_cap += cap - sent_today
+        total_cap += max(0, cap - sent_today)
 
-    return max(0, total_cap - queued_today)
+    # Queued emails are already spoken for — join through Campaign to reach user_id
+    already_queued = SendLog.query.join(
+        EnrolledLead, SendLog.enrolled_lead_id == EnrolledLead.id
+    ).join(
+        _Campaign, EnrolledLead.campaign_id == _Campaign.id
+    ).filter(
+        _Campaign.user_id == user_id,
+        SendLog.status == SendStatus.QUEUED,
+    ).count()
+
+    return max(0, total_cap - already_queued)
 
 
 @campaigns_bp.route('/<int:campaign_id>/write-with-ai', methods=['GET'])
