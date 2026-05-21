@@ -78,6 +78,13 @@
           {% if results %}
           <div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
 
+            {% if auto_extended_to %}
+            <div class="alert-info" style="margin-bottom:1rem;">
+              <i data-lucide="calendar-clock" style="width:16px;height:16px;flex-shrink:0;"></i>
+              <span>Your queue is already covered for the next {{ days_out }} day{{ 's' if days_out|int != 1 }}. Showing the next available leads — due within <strong>{{ auto_extended_to }} days</strong>.</span>
+            </div>
+            {% endif %}
+
             {% if has_more %}
             {# Multiple batches needed #}
             <div class="alert-batch" style="margin-bottom:1rem;">
@@ -85,7 +92,7 @@
                 <i data-lucide="layers" style="width:17px;height:17px;flex-shrink:0;margin-top:1px;"></i>
                 <div>
                   <strong>{{ total_in_window }} emails to write — split across {{ total_parts }} prompts for best quality.</strong>
-                  {% if per_day_cap is not none %}<span style="font-size:0.78rem;opacity:0.75;"> ({{ per_day_cap }}/day × {{ days_out }} day{{ 's' if days_out|int != 1 }} = {{ per_day_cap * days_out|int }} sendable, {{ window_cap }} remaining)</span>{% endif %}<br>
+                  {% if per_day_cap is not none %}<span style="font-size:0.78rem;opacity:0.75;"> ({{ per_day_cap }}/day × {{ auto_extended_to or days_out }} day{{ 's' if (auto_extended_to or days_out)|int != 1 }} = {{ per_day_cap * (auto_extended_to or days_out)|int }} sendable, {{ window_cap }} remaining)</span>{% endif %}<br>
                   <span style="font-size:0.82rem;">
                     This prompt covers <strong>Part 1 of {{ total_parts }}</strong>
                     ({{ results|length }} of {{ total_in_window }} emails).
@@ -100,7 +107,7 @@
               <i data-lucide="check-circle" style="width:16px;height:16px;flex-shrink:0;"></i>
               <span>
                 Found <strong>{{ results|length }}</strong> email{{ 's' if results|length != 1 }} ready to write
-                {% if per_day_cap is not none %}<span style="font-weight:400; opacity:0.8;">— within your {{ per_day_cap }}/day × {{ days_out }} day{{ 's' if days_out|int != 1 }} capacity ({{ window_cap }} remaining)</span>{% endif %}.
+                {% if per_day_cap is not none %}<span style="font-weight:400; opacity:0.8;">— within your {{ per_day_cap }}/day × {{ auto_extended_to or days_out }} day{{ 's' if (auto_extended_to or days_out)|int != 1 }} capacity ({{ window_cap }} remaining)</span>{% endif %}.
               </span>
             </div>
             {% endif %}
@@ -113,7 +120,7 @@
           <div style="margin-top:1.5rem; padding-top:1.5rem; border-top:1px solid var(--border);">
             <div class="alert-info">
               <i data-lucide="info" style="width:16px;height:16px;flex-shrink:0;"></i>
-              <span>No emails due within {{ days_out }} day{{ 's' if days_out|int != 1 }}. Try a larger window or check that leads are enrolled and active.</span>
+              <span>No unwritten emails found within 60 days. Check that leads are enrolled and active, and that your sequence has email steps assigned.</span>
             </div>
           </div>
           {% endif %}

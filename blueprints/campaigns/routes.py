@@ -725,6 +725,7 @@ def write_with_ai(campaign_id):
     total_parts      = 1
     window_cap       = None   # None = unlimited
     per_day_cap      = None
+    auto_extended_to = None   # set if we had to look further ahead than requested
 
     if days_out:
         try:
@@ -734,6 +735,18 @@ def write_with_ai(campaign_id):
 
         # All due leads in the window
         raw_results = _find_due_leads(campaign, days_out_int)
+
+        # If nothing found, the queue is already ahead of the requested window.
+        # Scan forward day-by-day (up to 60 days) to find where the next
+        # unwritten leads are, then show those automatically so the user doesn't
+        # have to keep bumping up the number manually.
+        if not raw_results:
+            for lookahead in range(days_out_int + 1, 61):
+                raw_results = _find_due_leads(campaign, lookahead)
+                if raw_results:
+                    auto_extended_to = lookahead
+                    days_out_int = lookahead
+                    break
 
         # Per-day cap (respects warmup tier) and total remaining window capacity
         per_day_cap = _raw_daily_cap(current_user.id)
@@ -772,6 +785,7 @@ def write_with_ai(campaign_id):
         batch_size=AI_BATCH_SIZE,
         per_day_cap=per_day_cap,
         window_cap=window_cap,
+        auto_extended_to=auto_extended_to,
         lead_step_map_json=json.dumps(lead_step_map),
         prompt=_build_combined_prompt(results) if results else '',
     )
