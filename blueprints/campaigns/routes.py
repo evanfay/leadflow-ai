@@ -505,6 +505,29 @@ def _find_due_leads(campaign, days_out):
                     or Template.query.filter_by(touch_type=step.template_slot, is_builtin=True).first()
                 )
 
+            # Fetch prior sent/queued emails for this lead so the AI can
+            # reference them in follow-ups (correct Re: subject, no repetition).
+            prior_logs = (
+                db.session.query(SendLog, SequenceStep)
+                .outerjoin(SequenceStep, SequenceStep.id == SendLog.step_id)
+                .filter(
+                    SendLog.enrolled_lead_id == el.id,
+                    SendLog.status.in_(['sent', 'queued']),
+                    SendLog.body_snippet != '',
+                )
+                .order_by(SendLog.id.asc())
+                .all()
+            )
+            previous_emails = [
+                {
+                    'touch_label': _humanize_touch(seq_step.template_slot) if seq_step else 'Email',
+                    'subject':     log.subject or '',
+                    'body':        log.body_snippet or '',
+                    'sent_at':     log.sent_at.strftime('%b %d') if log.sent_at else 'queued',
+                }
+                for log, seq_step in prior_logs
+            ]
+
             results.append({
                 'enrolled_lead_id': el.id,
                 'step_id':          step.id,
@@ -515,6 +538,7 @@ def _find_due_leads(campaign, days_out):
                 'template_subject': tmpl.subject if tmpl else '',
                 'template_body':    tmpl.body    if tmpl else '',
                 'due_date':         due_date,
+                'previous_emails':  previous_emails,
             })
             break  # one pending step per lead
 
@@ -523,6 +547,8 @@ def _find_due_leads(campaign, days_out):
 
 def _build_combined_prompt(results):
     """Build one prompt covering all leads, each labeled with their touch type and full template."""
+    has_followups = any(r.get('previous_emails') for r in results)
+
     lead_blocks = []
     for i, r in enumerate(results, 1):
         lead = r['lead']
@@ -543,20 +569,40 @@ def _build_combined_prompt(results):
         if lead.website:     lines.append(f'Website: {lead.website}')
         if lead.signal_1:    lines.append(f'Signal 1: {lead.signal_1}')
         if lead.signal_2:    lines.append(f'Signal 2: {lead.signal_2}')
+
+        # Inject prior email history so follow-ups can reference them
+        prev = r.get('previous_emails') or []
+        if prev:
+            lines.append(f'')
+            lines.append(f'PREVIOUS EMAILS ALREADY SENT TO THIS LEAD:')
+            for j, p in enumerate(prev, 1):
+                lines.append(f'  [{j}] {p["touch_label"]} ({p["sent_at"]})')
+                lines.append(f'      Subject: {p["subject"]}')
+                # Indent body lines so they're visually distinct
+                for body_line in p['body'].splitlines():
+                    lines.append(f'      {body_line}')
+
         lead_blocks.append('\n'.join(lines))
+
+    followup_rules = """
+- PREVIOUS EMAILS: You are given the exact emails already sent to this lead.
+  Use the previous subject line to construct a natural follow-up subject (e.g. "Re: <original subject>" or a continuation).
+  Do NOT repeat the same hook, angle, or opening as a previous email.
+  Reference the prior outreach briefly and naturally — the lead has seen it.""" if has_followups else ''
 
     prompt = f"""You are a B2B sales copywriter. Write one personalized email for EACH lead below.
 
 For each lead you are given:
 - SUBJECT TEMPLATE: the exact subject line format to follow
 - EMAIL TEMPLATE: the exact structure and tone to replicate — fill in the bracketed placeholders using the lead's data
+- PREVIOUS EMAILS (if any): the exact emails already sent to this lead earlier in the sequence
 
 RULES:
 - Follow the SUBJECT TEMPLATE and EMAIL TEMPLATE exactly — same structure, same sections, same length
 - Replace every {{placeholder}} or [bracketed instruction] with real, specific, personalized content
 - Plain text only — no bullet points, no HTML, no markdown
 - Do not invent facts you don't have
-- Do not add sections or copy that aren't in the template
+- Do not add sections or copy that aren't in the template{followup_rules}
 
 OUTPUT FORMAT — use this exactly for every lead, no exceptions:
 
