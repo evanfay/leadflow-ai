@@ -560,7 +560,7 @@ def _build_combined_prompt(results):
         if r['template_body']:
             lines.append(f'EMAIL TEMPLATE:\n{r["template_body"]}')
 
-        lines.append(f'---')
+        lines.append(f'LEAD DATA:')
         lines.append(f'Email: {lead.email}')
         if lead.first_name:  lines.append(f'First Name: {lead.first_name}')
         if lead.last_name:   lines.append(f'Last Name: {lead.last_name}')
@@ -598,26 +598,51 @@ For each lead you are given:
 - EMAIL TEMPLATE: the exact structure and tone to replicate — fill in the bracketed placeholders using the lead's data
 - PREVIOUS EMAILS (if any): the exact emails already sent to this lead earlier in the sequence
 
-RULES:
+CONTENT RULES:
 - Follow the SUBJECT TEMPLATE and EMAIL TEMPLATE exactly — same structure, same sections, same length
 - Replace every {{placeholder}} or [bracketed instruction] with real, specific, personalized content
 - Plain text only — no bullet points, no HTML, no markdown
 - Do not invent facts you don't have
 - Do not add sections or copy that aren't in the template{followup_rules}
 
-OUTPUT FORMAT — use this exactly for every lead, no exceptions:
+OUTPUT FORMAT — CRITICAL — you MUST follow this for every single email:
 
----LEAD:{{email address}}---
+---LEAD:{{exact email address}}---
 SUBJECT: {{subject line}}
 BODY:
 {{email body}}
 ---END---
 
-Write all {len(results)} emails now. Start immediately with the first ---LEAD:--- block.
+FORMATTING RULES — read carefully:
+- Your response must begin IMMEDIATELY with ---LEAD: — no intro sentence, no preamble, no "Here are the emails"
+- Copy the email address EXACTLY from the lead's "Email:" field — do not alter capitalisation or spelling
+- Every email MUST open with ---LEAD: and close with ---END--- — missing either marker breaks the import
+- Go straight from ---END--- into the next ---LEAD: — do not add blank lines, numbers, or commentary between emails
+- Do not write anything after the final ---END---
+
+EXAMPLE of correct output (do not copy this content — it is only to show the format):
+---LEAD:jane@acme.com---
+SUBJECT: Acme's Q2 expansion
+BODY:
+Hi Jane,
+Saw that Acme recently opened two new regional offices...
+---END---
+---LEAD:mark@widgetco.com---
+SUBJECT: WidgetCo's new product line
+BODY:
+Hi Mark,
+Noticed WidgetCo launched a new product line last month...
+---END---
+
+Now write all {len(results)} emails. Start with ---LEAD: immediately — no other text first.
 
 {'=' * 60}
 
-""" + ('\n' + '=' * 60 + '\n').join(lead_blocks)
+""" + ('\n' + '=' * 60 + '\n').join(lead_blocks) + f"""
+
+{'=' * 60}
+REMINDER: Output ONLY ---LEAD:---...---END--- blocks — {len(results)} of them, one per lead above.
+No intro. No summary. No sign-off. If you have finished all {len(results)}, stop."""
 
     return prompt
 
