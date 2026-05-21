@@ -457,6 +457,8 @@ select.form-control { cursor: pointer; background-image: url("data:image/svg+xml
 .table-hover tr:hover td { background: var(--bg); }
 .table-link { color: var(--text-heading); font-weight: 600; text-decoration: none; }
 .table-link:hover { color: var(--accent-1); opacity: 1; }
+.btn-link-subtle { background:none; border:none; padding:0; cursor:pointer; color:var(--text-muted); font-size:0.875rem; font-weight:600; }
+.btn-link-subtle:hover { color:var(--accent-1); }
 .empty-state-cell { text-align: center; color: var(--text-muted); padding: 2rem !important; font-size: 0.875rem; }
 .row-overdue td { background: rgba(239,68,68,0.03); }
 

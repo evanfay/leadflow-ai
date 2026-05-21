@@ -9,7 +9,7 @@ from . import campaigns_bp
 from extensions import db
 from models import (Campaign, Sequence, Lead, EnrolledLead, SendLog, ReplyLog,
                     TaskQueue, CampaignStatus, EnrolledStatus, ContentMode, TaskStatus,
-                    Template, DoNotContact, SendStatus)
+                    Template, DoNotContact, SendStatus, SequenceStep)
 
 
 @campaigns_bp.route('/')
@@ -119,6 +119,42 @@ def detail(campaign_id):
         status_filter=status_filter,
         sequences=sequences,
     )
+
+
+@campaigns_bp.route('/<int:campaign_id>/leads/<int:enrolled_lead_id>/emails')
+@login_required
+def lead_email_history(campaign_id, enrolled_lead_id):
+    """Return JSON with all send log entries for a lead in this campaign."""
+    campaign = Campaign.query.filter_by(id=campaign_id, user_id=current_user.id).first_or_404()
+    el = EnrolledLead.query.filter_by(id=enrolled_lead_id, campaign_id=campaign.id).first_or_404()
+
+    logs = (SendLog.query
+            .filter_by(enrolled_lead_id=el.id)
+            .order_by(SendLog.sent_at.asc(), SendLog.id.asc())
+            .all())
+
+    entries = []
+    for log in logs:
+        step_label = None
+        if log.step_id:
+            step = SequenceStep.query.get(log.step_id)
+            if step:
+                step_label = _humanize_touch(step.template_slot)
+        entries.append({
+            'id':         log.id,
+            'status':     log.status,
+            'subject':    log.subject or '',
+            'body':       log.body_snippet or '',
+            'sent_at':    log.sent_at.strftime('%b %d, %Y %I:%M %p') if log.sent_at else None,
+            'step_label': step_label or 'Email',
+        })
+
+    lead = el.lead
+    return jsonify({
+        'lead_name':  f'{lead.first_name or ""} {lead.last_name or ""}'.strip() or lead.email,
+        'lead_email': lead.email,
+        'emails':     entries,
+    })
 
 
 @campaigns_bp.route('/<int:campaign_id>/pause', methods=['POST'])
@@ -522,6 +558,22 @@ Write all {len(results)} emails now. Start immediately with the first ---LEAD:--
     return prompt
 
 
+def _raw_daily_cap(user_id):
+    """Return the effective per-day send cap summed across all active accounts (None if unlimited)."""
+    from models import EmailAccount
+    from scheduler_jobs import _get_daily_cap
+    accounts = EmailAccount.query.filter_by(user_id=user_id, active=True).all()
+    if not accounts:
+        return 0
+    total = 0
+    for acc in accounts:
+        cap = _get_daily_cap(acc)
+        if cap == float('inf'):
+            return None
+        total += cap
+    return total
+
+
 def _remaining_daily_capacity(user_id, days_out=1):
     """
     Return how many more emails the user can queue across the given window.
@@ -583,6 +635,7 @@ def write_with_ai(campaign_id):
     more_count       = 0
     total_parts      = 1
     window_cap       = None   # None = unlimited
+    per_day_cap      = None
 
     if days_out:
         try:
@@ -593,8 +646,9 @@ def write_with_ai(campaign_id):
         # All due leads in the window
         raw_results = _find_due_leads(campaign, days_out_int)
 
-        # Cap to sendable capacity across the whole window
-        window_cap = _remaining_daily_capacity(current_user.id, days_out=max(1, days_out_int))
+        # Per-day cap (respects warmup tier) and total remaining window capacity
+        per_day_cap = _raw_daily_cap(current_user.id)
+        window_cap  = _remaining_daily_capacity(current_user.id, days_out=max(1, days_out_int))
         if window_cap is not None:
             all_results = raw_results[:window_cap]
         else:
@@ -625,7 +679,8 @@ def write_with_ai(campaign_id):
         more_count=more_count,
         total_parts=total_parts,
         batch_size=AI_BATCH_SIZE,
-        daily_cap=window_cap,
+        per_day_cap=per_day_cap,
+        window_cap=window_cap,
         lead_step_map_json=json.dumps(lead_step_map),
         prompt=_build_combined_prompt(results) if results else '',
     )

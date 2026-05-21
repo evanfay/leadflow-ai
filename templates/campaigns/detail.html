@@ -284,7 +284,16 @@
             <td style="color:var(--text-muted); font-size:0.85rem;">
               {{ el.enrolled_at.strftime('%b %d') if el.enrolled_at else '—' }}
             </td>
-            <td style="color:var(--text-muted);">{{ el.send_logs.count() }}</td>
+            <td>
+              {% set send_count = el.send_logs.count() %}
+              {% if send_count > 0 %}
+              <button class="btn-link-subtle" onclick="openEmailHistory({{ el.id }}, '{{ el.lead.first_name }} {{ el.lead.last_name }}')" title="View sent emails">
+                {{ send_count }} <i data-lucide="mail" style="width:12px;height:12px;vertical-align:middle;margin-left:2px;"></i>
+              </button>
+              {% else %}
+              <span style="color:var(--text-muted);">0</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -545,5 +554,61 @@ function closeEditDraft() {
 document.getElementById('edit-draft-modal').addEventListener('click', function(e) {
   if (e.target === this) closeEditDraft();
 });
+
+// ── Lead email history slide-out ─────────────────────────────────────────────
+function openEmailHistory(enrolledLeadId, leadName) {
+  const panel = document.getElementById('email-history-panel');
+  const title = document.getElementById('email-history-title');
+  const body  = document.getElementById('email-history-body');
+
+  title.textContent = leadName + ' — Sent Emails';
+  body.innerHTML = '<p style="color:var(--text-muted);padding:1rem 0;">Loading…</p>';
+  panel.style.display = 'flex';
+
+  fetch(`/campaigns/{{ campaign.id }}/leads/${enrolledLeadId}/emails`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.emails || data.emails.length === 0) {
+        body.innerHTML = '<p style="color:var(--text-muted);padding:1rem 0;">No emails sent yet.</p>';
+        return;
+      }
+      body.innerHTML = data.emails.map((e, i) => `
+        <div style="border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.5rem;gap:0.5rem;">
+            <div>
+              <span style="font-size:0.75rem;font-weight:600;color:var(--primary);text-transform:uppercase;letter-spacing:.04em;">${e.step_label}</span>
+              <span style="font-size:0.72rem;color:var(--text-muted);margin-left:0.5rem;">${e.sent_at ? e.sent_at : e.status}</span>
+            </div>
+            <span class="badge ${e.status === 'sent' ? 'badge-green' : e.status === 'queued' ? 'badge-amber' : 'badge-gray'}">${e.status}</span>
+          </div>
+          <div style="font-weight:600;margin-bottom:0.4rem;font-size:0.9rem;">${escHtml(e.subject)}</div>
+          <div style="font-size:0.84rem;color:var(--text-body);white-space:pre-wrap;line-height:1.55;">${escHtml(e.body)}</div>
+        </div>
+      `).join('');
+    })
+    .catch(() => {
+      body.innerHTML = '<p style="color:var(--danger);">Failed to load emails.</p>';
+    });
+}
+
+function closeEmailHistory() {
+  document.getElementById('email-history-panel').style.display = 'none';
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 </script>
+
+<!-- Email history slide-out panel -->
+<div id="email-history-panel" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);align-items:flex-start;justify-content:flex-end;" onclick="if(event.target===this)closeEmailHistory()">
+  <div style="width:min(600px,100vw);height:100vh;background:var(--surface);box-shadow:-4px 0 24px rgba(0,0,0,.15);display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <h3 id="email-history-title" style="margin:0;font-size:1rem;font-weight:600;"></h3>
+      <button onclick="closeEmailHistory()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.4rem;line-height:1;padding:0 0.25rem;">&times;</button>
+    </div>
+    <div id="email-history-body" style="padding:1.25rem 1.5rem;overflow-y:auto;flex:1;"></div>
+  </div>
+</div>
+
 {% endblock %}
