@@ -585,10 +585,11 @@ def _build_combined_prompt(results):
         lead_blocks.append('\n'.join(lines))
 
     followup_rules = """
-- PREVIOUS EMAILS: You are given the exact emails already sent to this lead.
-  Use the previous subject line to construct a natural follow-up subject (e.g. "Re: <original subject>" or a continuation).
-  Do NOT repeat the same hook, angle, or opening as a previous email.
-  Reference the prior outreach briefly and naturally — the lead has seen it.""" if has_followups else ''
+- PREVIOUS EMAILS (context only — do NOT change the template structure):
+  The prior emails are provided so you can fill in template placeholders more naturally.
+  Still follow the SUBJECT TEMPLATE and EMAIL TEMPLATE exactly — same structure, same sections, same length.
+  Use the previous subject as context when filling in the subject placeholder (so it threads naturally).
+  When filling in personalised content within the template body, avoid repeating the same hook or angle already used.""" if has_followups else ''
 
     prompt = f"""You are a B2B sales copywriter. Write one personalized email for EACH lead below.
 
