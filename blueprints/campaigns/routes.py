@@ -733,20 +733,20 @@ def write_with_ai(campaign_id):
         except (ValueError, TypeError):
             days_out_int = 1
 
-        # All due leads in the window
-        raw_results = _find_due_leads(campaign, days_out_int)
+        # Run a single wide query (60 days) — cheap because _find_due_leads is
+        # one pass through active leads.  Slice to the requested window first;
+        # if that slice is empty the queue is ahead and we auto-extend instead
+        # of hammering the DB with 60 separate queries.
+        all_upcoming = _find_due_leads(campaign, 60)
+        raw_results  = [r for r in all_upcoming if r['due_date'] <= date.today() + timedelta(days=days_out_int)]
 
-        # If nothing found, the queue is already ahead of the requested window.
-        # Scan forward day-by-day (up to 60 days) to find where the next
-        # unwritten leads are, then show those automatically so the user doesn't
-        # have to keep bumping up the number manually.
-        if not raw_results:
-            for lookahead in range(days_out_int + 1, 61):
-                raw_results = _find_due_leads(campaign, lookahead)
-                if raw_results:
-                    auto_extended_to = lookahead
-                    days_out_int = lookahead
-                    break
+        if not raw_results and all_upcoming:
+            # Queue already covers the requested window — find the earliest
+            # unwritten due date and use that as the new effective window.
+            earliest_due    = min(r['due_date'] for r in all_upcoming)
+            auto_extended_to = max(days_out_int + 1, (earliest_due - date.today()).days + 1)
+            raw_results     = all_upcoming
+            days_out_int    = auto_extended_to
 
         # Per-day cap (respects warmup tier) and total remaining window capacity
         per_day_cap = _raw_daily_cap(current_user.id)
