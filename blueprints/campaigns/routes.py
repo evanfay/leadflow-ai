@@ -433,7 +433,6 @@ def _find_due_leads(campaign, days_out):
     Results are ordered oldest-enrollment-first (most overdue first).
     Caller slices to AI_BATCH_SIZE for the actual prompt.
     """
-    import math
     from scheduler_jobs import _step_jitter
 
     if not campaign.sequence_id:
@@ -447,10 +446,27 @@ def _find_due_leads(campaign, days_out):
         key=lambda s: s.day_offset
     )
 
+    if not email_steps:
+        return []
+
     active_els = (EnrolledLead.query
                   .filter_by(campaign_id=campaign.id, status=EnrolledStatus.ACTIVE)
                   .order_by(EnrolledLead.enrolled_at)
                   .all())
+
+    # Pre-build a set of (lead_id, template_slot) pairs that already have a
+    # send log in this campaign.  This single query replaces one-per-lead
+    # filter_by(step_id=...) lookups and is robust to step ID changes — if
+    # steps are ever recreated, old step_id values no longer match, but
+    # checking by template_slot (touch type) catches it correctly.
+    used_pairs = set(
+        db.session.query(Lead.id, SequenceStep.template_slot)
+        .join(EnrolledLead, EnrolledLead.lead_id == Lead.id)
+        .join(SendLog, SendLog.enrolled_lead_id == EnrolledLead.id)
+        .join(SequenceStep, SequenceStep.id == SendLog.step_id)
+        .filter(EnrolledLead.campaign_id == campaign.id)
+        .all()
+    )
 
     results = []
     for el in active_els:
@@ -469,20 +485,21 @@ def _find_due_leads(campaign, days_out):
             jitter = _step_jitter(el.id, step.id)
             due_date = enrolled_date + timedelta(days=step.day_offset + jitter)
 
+            # Already sent/queued this touch type for this lead — skip it.
+            if (lead.id, step.template_slot) in used_pairs:
+                continue
+
+            # This touch type hasn't been sent.  If it's not due yet either,
+            # stop — later steps have even higher day_offsets and are definitely
+            # not due.  Don't continue looking at future steps.
             if due_date > cutoff:
-                continue
+                break
 
-            existing = SendLog.query.filter_by(
-                enrolled_lead_id=el.id, step_id=step.id
-            ).first()
-            if existing:
-                continue
-
+            # Due and not yet sent — this is the next email for this lead.
             st = step.step_templates.filter_by(is_active=True).first()
             if st:
                 tmpl = st.template
             else:
-                # Prefer user's own template matching this touch type, then fall back to builtin
                 tmpl = (
                     Template.query.filter_by(user_id=campaign.user_id, touch_type=step.template_slot).first()
                     or Template.query.filter_by(touch_type=step.template_slot, is_builtin=True).first()
@@ -660,8 +677,10 @@ def write_with_ai(campaign_id):
         more_count      = max(0, total_in_window - AI_BATCH_SIZE)
         total_parts     = math.ceil(total_in_window / AI_BATCH_SIZE) if total_in_window > 0 else 1
 
+        # Keys are lowercased so the import lookup is case-insensitive — AI tools
+        # sometimes return email addresses in different capitalisation than provided.
         lead_step_map = {
-            r['email']: {
+            r['email'].lower(): {
                 'enrolled_lead_id': r['enrolled_lead_id'],
                 'step_id':          r['step_id'],
                 'template_id':      r['template_id'],
