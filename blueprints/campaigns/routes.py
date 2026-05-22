@@ -460,8 +460,7 @@ def _find_due_leads(campaign, days_out):
     # steps are ever recreated, old step_id values no longer match, but
     # checking by template_slot (touch type) catches it correctly.
     used_pairs = set(
-        db.session.query(Lead.id, SequenceStep.template_slot)
-        .join(EnrolledLead, EnrolledLead.lead_id == Lead.id)
+        db.session.query(EnrolledLead.lead_id, SequenceStep.template_slot)
         .join(SendLog, SendLog.enrolled_lead_id == EnrolledLead.id)
         .join(SequenceStep, SequenceStep.id == SendLog.step_id)
         .filter(EnrolledLead.campaign_id == campaign.id)
@@ -542,7 +541,22 @@ def _find_due_leads(campaign, days_out):
             })
             break  # one pending step per lead
 
-    return results
+    # Interleave follow-ups and openers at the same 60/40 ratio the scheduler uses,
+    # so the AI batch always contains a healthy mix rather than all follow-ups.
+    from scheduler_jobs import SEND_RATIO
+    followups = [r for r in results if r['previous_emails']]
+    openers   = [r for r in results if not r['previous_emails']]
+    fu_per, new_per = SEND_RATIO
+    interleaved = []
+    fi = ni = 0
+    while fi < len(followups) or ni < len(openers):
+        for _ in range(fu_per):
+            if fi < len(followups):
+                interleaved.append(followups[fi]); fi += 1
+        for _ in range(new_per):
+            if ni < len(openers):
+                interleaved.append(openers[ni]); ni += 1
+    return interleaved
 
 
 def _build_combined_prompt(results):

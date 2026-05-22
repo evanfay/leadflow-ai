@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta, date, time as dt_time
+from zoneinfo import ZoneInfo
+
+SEND_TIMEZONE = ZoneInfo('America/New_York')
 
 
 # Warmup send caps by tier and week number
@@ -173,8 +176,9 @@ def send_due_emails(app):
         from models import db, EnrolledLead, DoNotContact, EmailAccount, SendLog
         from models import EnrolledStatus, SendStatus
 
-        now = datetime.now()  # local time — send window is defined in local hours
-        # Only send on weekdays, during business hours (8 am–5 pm local)
+        # Use Eastern Time so the 8 am–5 pm window matches US business hours
+        # regardless of what timezone the server runs in.
+        now = datetime.now(SEND_TIMEZONE).replace(tzinfo=None)
         if now.weekday() >= 5:
             return
         if not (SEND_WINDOW_START <= now.hour < SEND_WINDOW_END):
